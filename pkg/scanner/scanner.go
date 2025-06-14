@@ -51,6 +51,8 @@ func (scanner *Scanner) scanToken() {
 	case ':':
 		scanner.addToken(token.COLON)
 	case ';':
+		scanner.addToken(token.SEMICOLON)
+	case ',':
 		scanner.addToken(token.COMMA)
 	case '(':
 		scanner.addToken(token.LPAREN)

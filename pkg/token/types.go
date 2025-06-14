@@ -17,34 +17,39 @@ const (
 	COMMENT TokenType = "COMMENT" // Comments in the source code
 
 	// Structural
-	COLON    TokenType = ":"
-	COMMA    TokenType = ";"
-	LPAREN   TokenType = "("
-	RPAREN   TokenType = ")"
-	LBRACE   TokenType = "{"
-	RBRACE   TokenType = "}"
-	LBRACKET TokenType = "["
-	RBRACKET TokenType = "]"
-	ASSIGN   TokenType = "="
-	PLUS     TokenType = "+"
-	MINUS    TokenType = "-"
-	STAR     TokenType = "*"
-	ARROW    TokenType = "->"
-	QUESTION TokenType = "?"
-	EXLAM    TokenType = "!"
-	GT       TokenType = ">"
-	LT       TokenType = "<"
+	COLON     TokenType = ":"
+	COMMA     TokenType = ","
+	SEMICOLON TokenType = ";"
+	LPAREN    TokenType = "("
+	RPAREN    TokenType = ")"
+	LBRACE    TokenType = "{"
+	RBRACE    TokenType = "}"
+	LBRACKET  TokenType = "["
+	RBRACKET  TokenType = "]"
+	ASSIGN    TokenType = "="
+	PLUS      TokenType = "+"
+	MINUS     TokenType = "-"
+	STAR      TokenType = "*"
+	ARROW     TokenType = "->"
+	QUESTION  TokenType = "?"
+	EXLAM     TokenType = "!"
+	GT        TokenType = ">"
+	LT        TokenType = "<"
 )
 
 // Keywords
 const (
-	SCENE TokenType = "SCENE" // Scene keyword, used to define a scene in the script
-	GOTO  TokenType = "GOTO"  // Goto keyword, used for jumping to a label in the script
-	LABEL TokenType = "LABEL" // Label keyword, used to define a label for goto statements
+	SCENE  TokenType = "SCENE"  // Scene keyword, used to define a scene in the script
+	GOTO   TokenType = "GOTO"   // Goto keyword, used for jumping to a label in the script
+	LABEL  TokenType = "LABEL"  // Label keyword, used to define a label for goto statements
+	CHOICE TokenType = "CHOICE" // Choice keyword, used to define a choice in the script
+	END    TokenType = "END"    // End keyword, used to indicate the end of a script or block
 )
 
 var Keywords = map[string]TokenType{
-	"scene": SCENE,
-	"goto":  GOTO,
-	"label": LABEL,
+	"SCENE":  SCENE,
+	"GOTO":   GOTO,
+	"LABEL":  LABEL,
+	"CHOICE": CHOICE,
+	"END":    END,
 }

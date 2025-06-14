@@ -17,5 +17,10 @@ func NewToken(tokenType TokenType, lexeme string, literal interface{}, line int)
 }
 
 func (t Token) ToString() string {
-	return t.Lexeme + " (" + string(t.Type) + ")"
+	switch t.Lexeme {
+	case "\n":
+		return "\\n (" + string(t.Type) + ")"
+	default:
+		return t.Lexeme + " (" + string(t.Type) + ")"
+	}
 }

@@ -78,7 +78,7 @@ func run(source string) {
 
 func printTokens(tokens []token.Token) {
 	for _, token := range tokens {
-		fmt.Printf("%+v\n", token)
+		fmt.Printf("%s\n", token.ToString())
 	}
 }
 
