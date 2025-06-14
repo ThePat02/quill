@@ -42,3 +42,9 @@ const (
 	GOTO  TokenType = "GOTO"  // Goto keyword, used for jumping to a label in the script
 	LABEL TokenType = "LABEL" // Label keyword, used to define a label for goto statements
 )
+
+var Keywords = map[string]TokenType{
+	"scene": SCENE,
+	"goto":  GOTO,
+	"label": LABEL,
+}
