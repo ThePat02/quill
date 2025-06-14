@@ -1,0 +1,32 @@
+# This is a comment to test comment tokens
+
+scene "Introduction" {
+    "Hello, this is a string literal"
+    label start
+    goto start
+
+    # Testing numbers and operators
+    42
+    1 + 2 - 3 * 4
+
+    # Testing special characters
+    ( ) [ ] { } : ; = -> ? ! < >
+
+    # Testing identifiers
+    player_name
+    location
+    score
+
+
+    # Testing mixed content
+    scene "Room1" {
+        "Player enters the room"
+        goto next_scene
+    }
+}
+
+# Testing multi-token patterns
+label end_game
+scene "Ending" {
+    "Thanks for playing!"
+}
