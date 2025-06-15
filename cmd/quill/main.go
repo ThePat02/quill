@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"quill/pkg/ast"
+	"quill/pkg/interpreter"
 	"quill/pkg/parser"
 	"quill/pkg/scanner"
 	"quill/pkg/token"
@@ -87,7 +88,12 @@ func run(source string) {
 
 	printProgram(program)
 
-	// TODO: Implement Interpreter
+	interpreter := interpreter.New(program)
+	err := interpreter.Interpret()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Runtime error: %v\n", err)
+		return
+	}
 }
 
 func printTokens(tokens []token.Token) {
