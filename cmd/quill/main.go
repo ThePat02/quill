@@ -3,8 +3,8 @@ package main
 import (
 	"fmt"
 	"os"
-	"skribent/pkg/scanner"
-	"skribent/pkg/token"
+	"quill/pkg/scanner"
+	"quill/pkg/token"
 )
 
 var hadError bool = false
@@ -17,7 +17,7 @@ func main() {
 	args, err := parseArgs(os.Args[1:])
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error parsing arguments: %v\n", err)
-		fmt.Println("Usage: skribent [file]")
+		fmt.Println("Usage: quill [file]")
 		return
 	}
 
@@ -47,7 +47,7 @@ func runFile(file string) {
 }
 
 func runPrompt() {
-	fmt.Println("Skribent is running in prompt mode. Type your input and press Enter.")
+	fmt.Println("Quill is running in prompt mode. Type your input and press Enter.")
 	for {
 		fmt.Print("> ")
 		var input string

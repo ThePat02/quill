@@ -1,6 +1,6 @@
 package scanner
 
-import "skribent/pkg/token"
+import "quill/pkg/token"
 
 func (scanner *Scanner) scanString() {
 	for scanner.peek() != '"' && !scanner.isAtEnd() {

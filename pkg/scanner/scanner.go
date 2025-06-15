@@ -1,6 +1,6 @@
 package scanner
 
-import "skribent/pkg/token"
+import "quill/pkg/token"
 
 type ErrorReporter func(line int, message string)
 
