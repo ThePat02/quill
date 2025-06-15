@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"os"
+	"quill/pkg/ast"
+	"quill/pkg/parser"
 	"quill/pkg/scanner"
 	"quill/pkg/token"
 )
@@ -68,22 +70,36 @@ func run(source string) {
 	scanner := scanner.New(source, Error)
 	tokens := scanner.ScanTokens()
 
-	printTokens(tokens)
-
 	if hadError {
 		fmt.Println("Errors were encountered during scanning.")
 		return
 	}
 
-	// TODO: Implement Parser
+	printTokens(tokens)
+
+	parser := parser.New(tokens)
+	program := parser.Parse()
+
+	if hadError {
+		fmt.Println("Errors were encountered during parsing.")
+		return
+	}
+
+	printProgram(program)
 
 	// TODO: Implement Interpreter
 }
 
 func printTokens(tokens []token.Token) {
+	fmt.Println("---------------------- Tokens ----------------------")
 	for _, token := range tokens {
 		fmt.Printf("%s\n", token.String())
 	}
+}
+
+func printProgram(program *ast.Program) {
+	fmt.Println("---------------------- Program ----------------------")
+	fmt.Println(program.String())
 }
 
 func Error(line int, message string) {
