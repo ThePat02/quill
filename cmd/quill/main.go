@@ -74,11 +74,15 @@ func run(source string) {
 		fmt.Println("Errors were encountered during scanning.")
 		return
 	}
+
+	// TODO: Implement Parser
+
+	// TODO: Implement Interpreter
 }
 
 func printTokens(tokens []token.Token) {
 	for _, token := range tokens {
-		fmt.Printf("%s\n", token.ToString())
+		fmt.Printf("%s\n", token.String())
 	}
 }
 
