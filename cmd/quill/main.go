@@ -22,8 +22,6 @@ func main() {
 
 	if args.File != "" {
 		runFile(args.File)
-	} else {
-		runPrompt()
 	}
 }
 
@@ -43,23 +41,6 @@ func runFile(file string) {
 		return
 	}
 	run(string(fileConent))
-}
-
-func runPrompt() {
-	fmt.Println("Quill is running in prompt mode. Type your input and press Enter.")
-	for {
-		fmt.Print("> ")
-		var input string
-		_, err := fmt.Scanln(&input)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error reading input: %v\n", err)
-			return
-		}
-		if input == "quit" {
-			return
-		}
-		run(input)
-	}
 }
 
 func run(source string) {
