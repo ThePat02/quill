@@ -3,14 +3,10 @@ package main
 import (
 	"fmt"
 	"os"
-	"quill/pkg/ast"
 	"quill/pkg/interpreter"
 	"quill/pkg/parser"
 	"quill/pkg/scanner"
-	"quill/pkg/token"
 )
-
-var hadError bool = false
 
 type Args struct {
 	File string
@@ -63,30 +59,22 @@ func runPrompt() {
 			return
 		}
 		run(input)
-		hadError = false
 	}
 }
 
 func run(source string) {
-	scanner := scanner.New(source, Error)
-	tokens := scanner.ScanTokens()
+	scanner := scanner.New(source)
+	tokens, errors := scanner.ScanTokens()
 
-	if hadError {
-		fmt.Println("Errors were encountered during scanning.")
+	if len(errors) > 0 {
+		for _, err := range errors {
+			fmt.Fprintf(os.Stderr, "ScannerError at line %d: %s\n", err.Line, err.Message)
+		}
 		return
 	}
-
-	printTokens(tokens)
 
 	parser := parser.New(tokens)
 	program := parser.Parse()
-
-	if hadError {
-		fmt.Println("Errors were encountered during parsing.")
-		return
-	}
-
-	printProgram(program)
 
 	interpreter := interpreter.New(program)
 	err := interpreter.Interpret()
@@ -94,25 +82,4 @@ func run(source string) {
 		fmt.Fprintf(os.Stderr, "Runtime error: %v\n", err)
 		return
 	}
-}
-
-func printTokens(tokens []token.Token) {
-	fmt.Println("---------------------- Tokens ----------------------")
-	for _, token := range tokens {
-		fmt.Printf("%s\n", token.String())
-	}
-}
-
-func printProgram(program *ast.Program) {
-	fmt.Println("---------------------- Program ----------------------")
-	fmt.Println(program.String())
-}
-
-func Error(line int, message string) {
-	report(line, "", message)
-}
-
-func report(line int, where string, message string) {
-	fmt.Printf("Error at line %d, %s: %s\n", line, where, message)
-	hadError = true
 }

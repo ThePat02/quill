@@ -5,37 +5,44 @@ import "quill/pkg/token"
 type ErrorReporter func(line int, message string)
 
 type Scanner struct {
-	source        string
-	tokens        []token.Token
-	start         int
-	current       int
-	line          int
-	errorReporter ErrorReporter
+	source  string
+	tokens  []token.Token
+	start   int
+	current int
+	line    int
 }
 
-func New(source string, errorReporter ErrorReporter) *Scanner {
+type ScannerError struct {
+	Line    int
+	Message string
+}
+
+func New(source string) *Scanner {
 	return &Scanner{
-		source:        source,
-		tokens:        make([]token.Token, 0),
-		start:         0,
-		current:       0,
-		line:          1,
-		errorReporter: errorReporter,
+		source:  source,
+		tokens:  make([]token.Token, 0),
+		start:   0,
+		current: 0,
+		line:    1,
 	}
 }
 
-func (scanner *Scanner) ScanTokens() []token.Token {
+func (scanner *Scanner) ScanTokens() ([]token.Token, []ScannerError) {
+	var errors []ScannerError = make([]ScannerError, 0)
 	for !scanner.isAtEnd() {
 		scanner.start = scanner.current
-		scanner.scanToken()
+		err := scanner.scanToken()
+		if err != nil {
+			errors = append(errors, *err)
+		}
 	}
 
 	scanner.tokens = append(scanner.tokens, token.NewToken(token.EOF, "", nil, scanner.line))
 
-	return scanner.tokens
+	return scanner.tokens, errors
 }
 
-func (scanner *Scanner) scanToken() {
+func (scanner *Scanner) scanToken() *ScannerError {
 	char := scanner.advance()
 	switch char {
 	// Ignored Characters
@@ -83,7 +90,10 @@ func (scanner *Scanner) scanToken() {
 
 	// Literals
 	case '"':
-		scanner.scanString()
+		err := scanner.scanString()
+		if err != nil {
+			return err
+		}
 
 	// Multi-Character
 	case '#':
@@ -95,7 +105,7 @@ func (scanner *Scanner) scanToken() {
 		if scanner.peek() == '>' {
 			scanner.advance()
 			scanner.addToken(token.ARROW)
-			return
+			return nil
 		}
 		scanner.addToken(token.MINUS)
 
@@ -104,17 +114,22 @@ func (scanner *Scanner) scanToken() {
 		// Digits
 		if scanner.isDigit(char) {
 			scanner.scanNumber()
-			return
+			return nil
 		}
 
 		// Identifiers and Keywords
 		if scanner.isAlpha(char) {
 			scanner.scanIdentifier()
-			return
+			return nil
 		}
 
 		// Handle unexpected characters
 		scanner.addToken(token.ILLEGAL)
-		scanner.errorReporter(scanner.line, "Unexpected character: "+string(char))
+		return &ScannerError{
+			Line:    scanner.line,
+			Message: "Unexpected character: " + string(char),
+		}
 	}
+
+	return nil
 }

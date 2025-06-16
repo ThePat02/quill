@@ -2,7 +2,7 @@ package scanner
 
 import "quill/pkg/token"
 
-func (scanner *Scanner) scanString() {
+func (scanner *Scanner) scanString() *ScannerError {
 	for scanner.peek() != '"' && !scanner.isAtEnd() {
 		if scanner.peek() == '\n' {
 			scanner.line++
@@ -11,14 +11,17 @@ func (scanner *Scanner) scanString() {
 	}
 
 	if scanner.isAtEnd() {
-		scanner.errorReporter(scanner.line, "Unterminated string.")
-		return
+		return &ScannerError{
+			Line:    scanner.line,
+			Message: "Unterminated string.",
+		}
 	}
 
 	scanner.advance()
 
 	value := scanner.source[scanner.start+1 : scanner.current-1]
 	scanner.addTokenWithLiteral(token.STRING, string(value))
+	return nil
 }
 
 func (scanner *Scanner) scanNumber() {
