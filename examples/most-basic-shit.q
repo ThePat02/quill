@@ -9,6 +9,14 @@ CHARLIE: "Hey everyone!"
 ALEX: "Should we play a game?"
 BELLA: "Oh, that sounds fun!"
 
+RANDOM {
+    { BELLA: "How about a trivia game?" },
+    { CHARLIE: "Let's play some games!" },
+    {
+        GHOST: "This is the secret third string!"
+    }
+}
+
 CHOICE {
     "Let's play a trivia game" {
         ALEX: "Great choice! Here's a question..."

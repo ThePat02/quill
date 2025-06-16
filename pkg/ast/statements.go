@@ -78,3 +78,25 @@ func (bs *BlockStatement) String() string {
 	}
 	return bs.Token.String() + "\n" + out
 }
+
+type RandomStatement struct {
+	Token   token.Token
+	Options []*RandomOption
+}
+
+type RandomOption struct {
+	Body *BlockStatement
+}
+
+func (ro *RandomOption) String() string {
+	return "Random Option:\n" + ro.Body.String()
+}
+
+func (rs *RandomStatement) statementNode() {}
+func (rs *RandomStatement) String() string {
+	var optionsStr string
+	for _, option := range rs.Options {
+		optionsStr += option.String() + "\n"
+	}
+	return rs.Token.String() + "\n" + optionsStr
+}

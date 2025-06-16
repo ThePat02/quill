@@ -39,7 +39,8 @@ const (
 
 // Keywords
 const (
-	SCENE  TokenType = "SCENE"  // Scene keyword, used to define a scene in the script
+	SCENE  TokenType = "SCENE" // Scene keyword, used to define a scene in the script
+	RANDOM TokenType = "RANDOM"
 	GOTO   TokenType = "GOTO"   // Goto keyword, used for jumping to a label in the script
 	LABEL  TokenType = "LABEL"  // Label keyword, used to define a label for goto statements
 	CHOICE TokenType = "CHOICE" // Choice keyword, used to define a choice in the script
@@ -48,6 +49,7 @@ const (
 
 var Keywords = map[string]TokenType{
 	"SCENE":  SCENE,
+	"RANDOM": RANDOM,
 	"GOTO":   GOTO,
 	"LABEL":  LABEL,
 	"CHOICE": CHOICE,

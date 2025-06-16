@@ -57,6 +57,8 @@ func (p *Parser) parseStatement() (ast.Statement, *ParseError) {
 		return p.parseGotoStatement()
 	case p.check(token.CHOICE):
 		return p.parseChoiceStatement()
+	case p.check(token.RANDOM):
+		return p.parseRandomStatement()
 	case p.check(token.END):
 		return p.parseEndStatement()
 	case p.check(token.IDENT):
@@ -274,6 +276,74 @@ func (p *Parser) parseBlockStatement() (*ast.BlockStatement, *ParseError) {
 	return &ast.BlockStatement{
 		Token:      lbraceToken,
 		Statements: statements,
+	}, nil
+}
+
+func (p *Parser) parseRandomStatement() (ast.Statement, *ParseError) {
+	randomToken := p.peek()
+	p.advance() // consume RANDOM
+
+	if !p.check(token.LBRACE) {
+		return nil, &ParseError{
+			Line:    p.peek().Line,
+			Message: "Expected '{' after RANDOM",
+		}
+	}
+
+	p.advance() // consume '{'
+
+	var options []*ast.RandomOption
+
+	for !p.check(token.RBRACE) && !p.isAtEnd() {
+		if p.check(token.NEWLINE) {
+			p.advance()
+			continue
+		}
+
+		option, err := p.parseRandomOption()
+		if err != nil {
+			return nil, err
+		}
+		if option != nil {
+			options = append(options, option)
+		}
+
+		// Consume optional comma
+		if p.check(token.COMMA) {
+			p.advance()
+		}
+	}
+
+	if !p.check(token.RBRACE) {
+		return nil, &ParseError{
+			Line:    p.peek().Line,
+			Message: "Expected '}' to close RANDOM block",
+		}
+	}
+
+	p.advance() // consume '}'
+
+	return &ast.RandomStatement{
+		Token:   randomToken,
+		Options: options,
+	}, nil
+}
+
+func (p *Parser) parseRandomOption() (*ast.RandomOption, *ParseError) {
+	if !p.check(token.LBRACE) {
+		return nil, &ParseError{
+			Line:    p.peek().Line,
+			Message: "Expected '{' for random option",
+		}
+	}
+
+	body, err := p.parseBlockStatement()
+	if err != nil {
+		return nil, err
+	}
+
+	return &ast.RandomOption{
+		Body: body,
 	}, nil
 }
 

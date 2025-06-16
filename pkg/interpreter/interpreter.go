@@ -3,10 +3,12 @@ package interpreter
 import (
 	"bufio"
 	"fmt"
+	"math/rand"
 	"os"
 	"quill/pkg/ast"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type Interpreter struct {
@@ -28,6 +30,9 @@ func New(program *ast.Program) *Interpreter {
 	}
 
 	interpreter.collectLabels()
+
+	// Seed random number generator
+	rand.Seed(time.Now().UnixNano())
 
 	return interpreter
 }
@@ -84,6 +89,9 @@ func (i *Interpreter) executeStatement(stmt ast.Statement) (string, *Interpreter
 	case *ast.ChoiceStatement:
 		return i.executeChoice(node)
 
+	case *ast.RandomStatement:
+		return i.executeRandom(node)
+
 	case *ast.GotoStatement:
 		return "GOTO:" + node.Label.Value, nil
 
@@ -138,6 +146,22 @@ func (i *Interpreter) executeChoice(choice *ast.ChoiceStatement) (string, *Inter
 	fmt.Printf("You chose: %s\n", selectedOption.Text.(*ast.StringLiteral).Value)
 
 	// Execute the body of the selected choice
+	return i.executeBlock(selectedOption.Body)
+}
+
+func (i *Interpreter) executeRandom(random *ast.RandomStatement) (string, *InterpreterError) {
+	if len(random.Options) == 0 {
+		return "", &InterpreterError{
+			Message: "RANDOM block has no options",
+			Line:    random.Token.Line,
+		}
+	}
+
+	// Pick a random option
+	selectedIndex := rand.Intn(len(random.Options))
+	selectedOption := random.Options[selectedIndex]
+
+	// Execute the selected option's body
 	return i.executeBlock(selectedOption.Body)
 }
 
@@ -201,6 +225,10 @@ func (i *Interpreter) collectLabelsFromStatement(stmt ast.Statement) {
 		for _, option := range node.Options {
 			i.collectLabelsFromBlock(option.Body)
 		}
+	case *ast.RandomStatement:
+		for _, option := range node.Options {
+			i.collectLabelsFromBlock(option.Body)
+		}
 	case *ast.BlockStatement:
 		i.collectLabelsFromBlock(node)
 	}
@@ -220,6 +248,8 @@ func (i *Interpreter) getStatementLine(stmt ast.Statement) int {
 	case *ast.DialogStatement:
 		return node.Character.Token.Line
 	case *ast.ChoiceStatement:
+		return node.Token.Line
+	case *ast.RandomStatement:
 		return node.Token.Line
 	case *ast.GotoStatement:
 		return node.Token.Line
