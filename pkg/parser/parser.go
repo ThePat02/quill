@@ -154,10 +154,68 @@ func (p *Parser) parseDialogStatement() (ast.Statement, *ParseError) {
 	}
 	p.advance() // consume string
 
+	// Parse optional tags
+	var tags *ast.TagList
+	if p.check(token.LBRACKET) {
+		var err *ParseError
+		tags, err = p.parseTagList()
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	return &ast.DialogStatement{
 		Character: character,
 		Colon:     colonToken,
 		Text:      text,
+		Tags:      tags,
+	}, nil
+}
+
+func (p *Parser) parseTagList() (*ast.TagList, *ParseError) {
+	lbracketToken := p.peek()
+	p.advance() // consume '['
+
+	var tags []*ast.Identifier
+
+	for !p.check(token.RBRACKET) && !p.isAtEnd() {
+		if !p.check(token.IDENT) {
+			return nil, &ParseError{
+				Line:    p.peek().Line,
+				Message: "Expected identifier in tag list",
+			}
+		}
+
+		tag := &ast.Identifier{
+			Token: p.peek(),
+			Value: p.peek().Lexeme,
+		}
+		p.advance()
+		tags = append(tags, tag)
+
+		// Handle comma separation
+		if p.check(token.COMMA) {
+			p.advance()
+		} else if !p.check(token.RBRACKET) {
+			return nil, &ParseError{
+				Line:    p.peek().Line,
+				Message: "Expected ',' or ']' in tag list",
+			}
+		}
+	}
+
+	if !p.check(token.RBRACKET) {
+		return nil, &ParseError{
+			Line:    p.peek().Line,
+			Message: "Expected ']' to close tag list",
+		}
+	}
+
+	p.advance() // consume ']'
+
+	return &ast.TagList{
+		Token: lbracketToken,
+		Tags:  tags,
 	}, nil
 }
 
@@ -237,9 +295,19 @@ func (p *Parser) parseChoiceOption() (*ast.ChoiceOption, *ParseError) {
 		return nil, err
 	}
 
+	// Parse optional tags after the body
+	var tags *ast.TagList
+	if p.check(token.LBRACKET) {
+		tags, err = p.parseTagList()
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	return &ast.ChoiceOption{
 		Text: text,
 		Body: body,
+		Tags: tags,
 	}, nil
 }
 
@@ -342,8 +410,18 @@ func (p *Parser) parseRandomOption() (*ast.RandomOption, *ParseError) {
 		return nil, err
 	}
 
+	// Parse optional tags after the body
+	var tags *ast.TagList
+	if p.check(token.LBRACKET) {
+		tags, err = p.parseTagList()
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	return &ast.RandomOption{
 		Body: body,
+		Tags: tags,
 	}, nil
 }
 

@@ -35,11 +35,12 @@ type DialogStatement struct {
 	Character *Identifier
 	Colon     token.Token
 	Text      *StringLiteral
+	Tags      *TagList
 }
 
 func (ds *DialogStatement) statementNode() {}
 func (ds *DialogStatement) String() string {
-	return ds.Character.String() + ds.Colon.String() + " " + ds.Text.String()
+	return ds.Character.String() + ds.Colon.String() + " " + ds.Text.String() + " | " + ds.Tags.String()
 }
 
 type ChoiceStatement struct {
@@ -50,10 +51,16 @@ type ChoiceStatement struct {
 type ChoiceOption struct {
 	Text Expression
 	Body *BlockStatement
+	Tags *TagList
 }
 
 func (co *ChoiceOption) String() string {
-	return "Choice: " + co.Text.String() + "\n" + co.Body.String()
+	result := "Choice: " + co.Text.String()
+	if co.Tags != nil {
+		result += " " + co.Tags.String()
+	}
+	result += "\n" + co.Body.String()
+	return result
 }
 
 func (cs *ChoiceStatement) statementNode() {}
@@ -86,10 +93,16 @@ type RandomStatement struct {
 
 type RandomOption struct {
 	Body *BlockStatement
+	Tags *TagList
 }
 
 func (ro *RandomOption) String() string {
-	return "Random Option:\n" + ro.Body.String()
+	result := "Random Option:"
+	if ro.Tags != nil {
+		result += " " + ro.Tags.String()
+	}
+	result += "\n" + ro.Body.String()
+	return result
 }
 
 func (rs *RandomStatement) statementNode() {}

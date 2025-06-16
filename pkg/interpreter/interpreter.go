@@ -113,7 +113,17 @@ func (i *Interpreter) executeDialog(dialog *ast.DialogStatement) (string, *Inter
 	character := dialog.Character.Value
 	text := dialog.Text.Value
 
-	fmt.Printf("%s: %s\n", character, text)
+	// Format the output with tags if present
+	output := fmt.Sprintf("%s: %s", character, text)
+	if dialog.Tags != nil && len(dialog.Tags.Tags) > 0 {
+		tagList := make([]string, len(dialog.Tags.Tags))
+		for idx, tag := range dialog.Tags.Tags {
+			tagList[idx] = tag.Value
+		}
+		output += fmt.Sprintf(" [%s]", strings.Join(tagList, ", "))
+	}
+
+	fmt.Println(output)
 	return "", nil
 }
 
@@ -124,7 +134,17 @@ func (i *Interpreter) executeChoice(choice *ast.ChoiceStatement) (string, *Inter
 		if stringLit, ok := option.Text.(*ast.StringLiteral); ok {
 			text = stringLit.Value
 		}
-		fmt.Printf("%d. %s\n", idx+1, text)
+
+		// Add tags to choice display if present
+		output := fmt.Sprintf("%d. %s", idx+1, text)
+		if option.Tags != nil && len(option.Tags.Tags) > 0 {
+			tagList := make([]string, len(option.Tags.Tags))
+			for i, tag := range option.Tags.Tags {
+				tagList[i] = tag.Value
+			}
+			output += fmt.Sprintf(" [%s]", strings.Join(tagList, ", "))
+		}
+		fmt.Println(output)
 	}
 
 	fmt.Print("Enter your choice (number): ")

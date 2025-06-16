@@ -2,16 +2,16 @@
 
 LABEL start
 
-ALEX: "Welcome to our little gathering!"
-BELLA: "Thanks for having us, Alex!"
+ALEX: "Welcome to our little gathering!" [tag1]
+BELLA: "Thanks for having us, Alex!" [tag1, tag2]
 CHARLIE: "Hey everyone!"
 
 ALEX: "Should we play a game?"
 BELLA: "Oh, that sounds fun!"
 
 RANDOM {
-    { BELLA: "How about a trivia game?" },
-    { CHARLIE: "Let's play some games!" },
+    { BELLA: "How about a trivia game?" } [tag1, tag2],
+    { CHARLIE: "Let's play some games!" } [tag3],
     {
         GHOST: "This is the secret third string!"
     }
@@ -23,7 +23,7 @@ CHOICE {
         CHARLIE: "I love trivia!"
         
         CHOICE {
-            "Continue with trivia" { GOTO trivia_path },
+            "Continue with trivia" { GOTO trivia_path } [tag1, tag2],
             "Maybe something else" { GOTO party_games }
         }
     },
