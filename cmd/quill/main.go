@@ -45,17 +45,24 @@ func runFile(file string) {
 
 func run(source string) {
 	scanner := scanner.New(source)
-	tokens, errors := scanner.ScanTokens()
+	tokens, scannerErrors := scanner.ScanTokens()
 
-	if len(errors) > 0 {
-		for _, err := range errors {
+	if len(scannerErrors) > 0 {
+		for _, err := range scannerErrors {
 			fmt.Fprintf(os.Stderr, "ScannerError at line %d: %s\n", err.Line, err.Message)
 		}
 		return
 	}
 
 	parser := parser.New(tokens)
-	program := parser.Parse()
+	program, parserErrors := parser.Parse()
+
+	if len(parserErrors) > 0 {
+		for _, err := range parserErrors {
+			fmt.Fprintf(os.Stderr, "ParseError at line %d: %s\n", err.Line, err.Message)
+		}
+		return
+	}
 
 	interpreter := interpreter.New(program)
 	err := interpreter.Interpret()

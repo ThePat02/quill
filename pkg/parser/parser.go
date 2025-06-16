@@ -10,6 +10,11 @@ type Parser struct {
 	current int
 }
 
+type ParseError struct {
+	Line    int
+	Message string
+}
+
 func New(tokens []token.Token) *Parser {
 	return &Parser{
 		tokens:  tokens,
@@ -17,7 +22,9 @@ func New(tokens []token.Token) *Parser {
 	}
 }
 
-func (p *Parser) Parse() *ast.Program {
+func (p *Parser) Parse() (*ast.Program, []ParseError) {
+	var errors []ParseError = make([]ParseError, 0)
+
 	program := &ast.Program{}
 	program.Statements = []ast.Statement{}
 
@@ -27,16 +34,22 @@ func (p *Parser) Parse() *ast.Program {
 			continue
 		}
 
-		stmt := p.parseStatement()
+		stmt, err := p.parseStatement()
+		if err != nil {
+			errors = append(errors, *err)
+			// Skip to next statement after error
+			p.synchronize()
+			continue
+		}
 		if stmt != nil {
 			program.Statements = append(program.Statements, stmt)
 		}
 	}
 
-	return program
+	return program, errors
 }
 
-func (p *Parser) parseStatement() ast.Statement {
+func (p *Parser) parseStatement() (ast.Statement, *ParseError) {
 	switch {
 	case p.check(token.LABEL):
 		return p.parseLabelStatement()
@@ -52,16 +65,24 @@ func (p *Parser) parseStatement() ast.Statement {
 		}
 	}
 
+	// Unknown token error
+	current := p.peek()
 	p.advance() // Skip unrecognized token
-	return nil
+	return nil, &ParseError{
+		Line:    current.Line,
+		Message: "Unexpected token: " + current.Lexeme,
+	}
 }
 
-func (p *Parser) parseLabelStatement() *ast.LabelStatement {
+func (p *Parser) parseLabelStatement() (ast.Statement, *ParseError) {
 	labelToken := p.peek()
 	p.advance() // consume LABEL
 
 	if !p.check(token.IDENT) {
-		return nil
+		return nil, &ParseError{
+			Line:    p.peek().Line,
+			Message: "Expected identifier after LABEL",
+		}
 	}
 
 	name := &ast.Identifier{
@@ -73,15 +94,18 @@ func (p *Parser) parseLabelStatement() *ast.LabelStatement {
 	return &ast.LabelStatement{
 		Token: labelToken,
 		Name:  name,
-	}
+	}, nil
 }
 
-func (p *Parser) parseGotoStatement() *ast.GotoStatement {
+func (p *Parser) parseGotoStatement() (ast.Statement, *ParseError) {
 	gotoToken := p.peek()
 	p.advance() // consume GOTO
 
 	if !p.check(token.IDENT) {
-		return nil
+		return nil, &ParseError{
+			Line:    p.peek().Line,
+			Message: "Expected identifier after GOTO",
+		}
 	}
 
 	label := &ast.Identifier{
@@ -93,19 +117,19 @@ func (p *Parser) parseGotoStatement() *ast.GotoStatement {
 	return &ast.GotoStatement{
 		Token: gotoToken,
 		Label: label,
-	}
+	}, nil
 }
 
-func (p *Parser) parseEndStatement() *ast.EndStatement {
+func (p *Parser) parseEndStatement() (ast.Statement, *ParseError) {
 	endToken := p.peek()
 	p.advance() // consume END
 
 	return &ast.EndStatement{
 		Token: endToken,
-	}
+	}, nil
 }
 
-func (p *Parser) parseDialogStatement() *ast.DialogStatement {
+func (p *Parser) parseDialogStatement() (ast.Statement, *ParseError) {
 	character := &ast.Identifier{
 		Token: p.peek(),
 		Value: p.peek().Lexeme,
@@ -116,7 +140,10 @@ func (p *Parser) parseDialogStatement() *ast.DialogStatement {
 	p.advance() // consume ':'
 
 	if !p.check(token.STRING) {
-		return nil
+		return nil, &ParseError{
+			Line:    p.peek().Line,
+			Message: "Expected string literal after ':'",
+		}
 	}
 
 	text := &ast.StringLiteral{
@@ -129,15 +156,18 @@ func (p *Parser) parseDialogStatement() *ast.DialogStatement {
 		Character: character,
 		Colon:     colonToken,
 		Text:      text,
-	}
+	}, nil
 }
 
-func (p *Parser) parseChoiceStatement() *ast.ChoiceStatement {
+func (p *Parser) parseChoiceStatement() (ast.Statement, *ParseError) {
 	choiceToken := p.peek()
 	p.advance() // consume CHOICE
 
 	if !p.check(token.LBRACE) {
-		return nil
+		return nil, &ParseError{
+			Line:    p.peek().Line,
+			Message: "Expected '{' after CHOICE",
+		}
 	}
 
 	p.advance() // consume '{'
@@ -150,7 +180,10 @@ func (p *Parser) parseChoiceStatement() *ast.ChoiceStatement {
 			continue
 		}
 
-		option := p.parseChoiceOption()
+		option, err := p.parseChoiceOption()
+		if err != nil {
+			return nil, err
+		}
 		if option != nil {
 			options = append(options, option)
 		}
@@ -162,7 +195,10 @@ func (p *Parser) parseChoiceStatement() *ast.ChoiceStatement {
 	}
 
 	if !p.check(token.RBRACE) {
-		return nil
+		return nil, &ParseError{
+			Line:    p.peek().Line,
+			Message: "Expected '}' to close CHOICE block",
+		}
 	}
 
 	p.advance() // consume '}'
@@ -170,12 +206,15 @@ func (p *Parser) parseChoiceStatement() *ast.ChoiceStatement {
 	return &ast.ChoiceStatement{
 		Token:   choiceToken,
 		Options: options,
-	}
+	}, nil
 }
 
-func (p *Parser) parseChoiceOption() *ast.ChoiceOption {
+func (p *Parser) parseChoiceOption() (*ast.ChoiceOption, *ParseError) {
 	if !p.check(token.STRING) {
-		return nil
+		return nil, &ParseError{
+			Line:    p.peek().Line,
+			Message: "Expected string literal for choice option",
+		}
 	}
 
 	text := &ast.StringLiteral{
@@ -185,18 +224,24 @@ func (p *Parser) parseChoiceOption() *ast.ChoiceOption {
 	p.advance()
 
 	if !p.check(token.LBRACE) {
-		return nil
+		return nil, &ParseError{
+			Line:    p.peek().Line,
+			Message: "Expected '{' after choice option text",
+		}
 	}
 
-	body := p.parseBlockStatement()
+	body, err := p.parseBlockStatement()
+	if err != nil {
+		return nil, err
+	}
 
 	return &ast.ChoiceOption{
 		Text: text,
 		Body: body,
-	}
+	}, nil
 }
 
-func (p *Parser) parseBlockStatement() *ast.BlockStatement {
+func (p *Parser) parseBlockStatement() (*ast.BlockStatement, *ParseError) {
 	lbraceToken := p.peek()
 	p.advance() // consume '{'
 
@@ -209,19 +254,43 @@ func (p *Parser) parseBlockStatement() *ast.BlockStatement {
 			continue
 		}
 
-		stmt := p.parseStatement()
+		stmt, err := p.parseStatement()
+		if err != nil {
+			return nil, err
+		}
 		if stmt != nil {
 			statements = append(statements, stmt)
 		}
 	}
 
 	if !p.check(token.RBRACE) {
-		return nil
+		return nil, &ParseError{
+			Line:    p.peek().Line,
+			Message: "Expected '}' to close block",
+		}
 	}
 
 	p.advance() // consume '}'
 	return &ast.BlockStatement{
 		Token:      lbraceToken,
 		Statements: statements,
+	}, nil
+}
+
+// Helper function for error recovery
+func (p *Parser) synchronize() {
+	p.advance()
+
+	for !p.isAtEnd() {
+		if p.tokens[p.current-1].Type == token.NEWLINE {
+			return
+		}
+
+		switch p.peek().Type {
+		case token.LABEL, token.GOTO, token.CHOICE, token.END:
+			return
+		}
+
+		p.advance()
 	}
 }
