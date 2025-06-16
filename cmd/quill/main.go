@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"quill/pkg/interpreter"
@@ -9,41 +10,60 @@ import (
 )
 
 type Args struct {
-	File string
+	File      string
+	Verbose   bool
+	ParseOnly bool
 }
 
 func main() {
-	args, err := parseArgs(os.Args[1:])
+	args, err := parseArgs()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error parsing arguments: %v\n", err)
-		fmt.Println("Usage: quill [file]")
-		return
+		os.Exit(1)
 	}
 
-	if args.File != "" {
-		runFile(args.File)
-	}
+	runFile(args.File, args)
 }
 
-func parseArgs(args []string) (Args, error) {
-	if len(args) == 0 {
-		return Args{}, nil
-	} else if len(args) > 1 {
-		return Args{}, fmt.Errorf("too many arguments")
+func parseArgs() (Args, error) {
+	var verbose bool
+	flag.BoolVar(&verbose, "v", false, "Enable verbose output")
+
+	var parseOnly bool
+	flag.BoolVar(&parseOnly, "p", false, "Parse only, do not run the program")
+
+	flag.Usage = func() {
+		fmt.Fprintf(os.Stderr, "Usage: quill [options] [file]\n")
+		fmt.Fprintln(os.Stderr, "Options:")
+		flag.PrintDefaults()
 	}
-	return Args{File: args[0]}, nil
+
+	flag.Parse()
+
+	args := flag.Args()
+
+	var file string
+	if len(args) == 1 {
+		file = args[0]
+	}
+
+	return Args{
+		File:      file,
+		Verbose:   verbose,
+		ParseOnly: parseOnly,
+	}, nil
 }
 
-func runFile(file string) {
+func runFile(file string, args Args) {
 	fileConent, err := os.ReadFile(file)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error reading file %s: %v\n", file, err)
 		return
 	}
-	run(string(fileConent))
+	run(string(fileConent), args)
 }
 
-func run(source string) {
+func run(source string, args Args) {
 	scanner := scanner.New(source)
 	tokens, scannerErrors := scanner.ScanTokens()
 
@@ -52,6 +72,17 @@ func run(source string) {
 			fmt.Fprintf(os.Stderr, "ScannerError at line %d: %s\n", err.Line, err.Message)
 		}
 		return
+	}
+
+	if args.Verbose {
+		fmt.Println("Tokens:")
+		for _, token := range tokens {
+			t := token.String()
+			if t == "\n" {
+				t = "\\n"
+			}
+			fmt.Printf("%s (%s)\n", t, token.Type)
+		}
 	}
 
 	parser := parser.New(tokens)
@@ -64,6 +95,18 @@ func run(source string) {
 		return
 	}
 
+	fmt.Println("File parsed successfully.")
+
+	if args.Verbose {
+		fmt.Println("Program:")
+		fmt.Println(program)
+	}
+
+	if args.ParseOnly {
+		fmt.Println("Parse only mode, exiting after parsing.")
+		return
+	}
+
 	interpreter := interpreter.New(program)
 	interpreterErrors := interpreter.Interpret()
 
@@ -73,4 +116,5 @@ func run(source string) {
 		}
 		return
 	}
+
 }
