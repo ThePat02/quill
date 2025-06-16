@@ -11,14 +11,19 @@ import (
 
 type Interpreter struct {
 	program *ast.Program
-	labels  map[string]*ast.LabelStatement // Fix: should be pointer type
+	labels  map[string]*ast.LabelStatement
 	scanner *bufio.Scanner
+}
+
+type InterpreterError struct {
+	Message string
+	Line    int
 }
 
 func New(program *ast.Program) *Interpreter {
 	interpreter := &Interpreter{
 		program: program,
-		labels:  make(map[string]*ast.LabelStatement), // Fix: pointer type
+		labels:  make(map[string]*ast.LabelStatement),
 		scanner: bufio.NewScanner(os.Stdin),
 	}
 
@@ -27,12 +32,19 @@ func New(program *ast.Program) *Interpreter {
 	return interpreter
 }
 
-func (i *Interpreter) Interpret() error {
+func (i *Interpreter) Interpret() []InterpreterError {
+	var errors []InterpreterError = make([]InterpreterError, 0)
+
 	fmt.Println("--- Starting Dialog ---")
-	return i.executeStatements(i.program.Statements)
+	err := i.executeStatements(i.program.Statements)
+	if err != nil {
+		errors = append(errors, *err)
+	}
+
+	return errors
 }
 
-func (i *Interpreter) executeStatements(statements []ast.Statement) error {
+func (i *Interpreter) executeStatements(statements []ast.Statement) *InterpreterError {
 	for _, stmt := range statements {
 		result, err := i.executeStatement(stmt)
 		if err != nil {
@@ -60,7 +72,7 @@ func (i *Interpreter) executeStatements(statements []ast.Statement) error {
 	return nil
 }
 
-func (i *Interpreter) executeStatement(stmt ast.Statement) (string, error) {
+func (i *Interpreter) executeStatement(stmt ast.Statement) (string, *InterpreterError) {
 	switch node := stmt.(type) {
 	case *ast.LabelStatement:
 		// Labels are just markers, no execution needed
@@ -82,11 +94,14 @@ func (i *Interpreter) executeStatement(stmt ast.Statement) (string, error) {
 		return i.executeBlock(node)
 
 	default:
-		return "", fmt.Errorf("unknown statement type: %T", stmt)
+		return "", &InterpreterError{
+			Message: fmt.Sprintf("unknown statement type: %T", stmt),
+			Line:    i.getStatementLine(stmt),
+		}
 	}
 }
 
-func (i *Interpreter) executeDialog(dialog *ast.DialogStatement) (string, error) {
+func (i *Interpreter) executeDialog(dialog *ast.DialogStatement) (string, *InterpreterError) {
 	character := dialog.Character.Value
 	text := dialog.Text.Value
 
@@ -94,7 +109,7 @@ func (i *Interpreter) executeDialog(dialog *ast.DialogStatement) (string, error)
 	return "", nil
 }
 
-func (i *Interpreter) executeChoice(choice *ast.ChoiceStatement) (string, error) {
+func (i *Interpreter) executeChoice(choice *ast.ChoiceStatement) (string, *InterpreterError) {
 	fmt.Println("\nChoices:")
 	for idx, option := range choice.Options {
 		text := ""
@@ -106,7 +121,10 @@ func (i *Interpreter) executeChoice(choice *ast.ChoiceStatement) (string, error)
 
 	fmt.Print("Enter your choice (number): ")
 	if !i.scanner.Scan() {
-		return "", fmt.Errorf("failed to read input")
+		return "", &InterpreterError{
+			Message: "failed to read input",
+			Line:    choice.Token.Line,
+		}
 	}
 
 	input := strings.TrimSpace(i.scanner.Text())
@@ -123,7 +141,7 @@ func (i *Interpreter) executeChoice(choice *ast.ChoiceStatement) (string, error)
 	return i.executeBlock(selectedOption.Body)
 }
 
-func (i *Interpreter) executeBlock(block *ast.BlockStatement) (string, error) {
+func (i *Interpreter) executeBlock(block *ast.BlockStatement) (string, *InterpreterError) {
 	for _, stmt := range block.Statements {
 		result, err := i.executeStatement(stmt)
 		if err != nil {
@@ -139,15 +157,18 @@ func (i *Interpreter) executeBlock(block *ast.BlockStatement) (string, error) {
 	return "", nil
 }
 
-func (i *Interpreter) gotoLabel(labelName string) error {
+func (i *Interpreter) gotoLabel(labelName string) *InterpreterError {
 	label, exists := i.labels[labelName]
 	if !exists {
-		return fmt.Errorf("label '%s' not found", labelName)
+		return &InterpreterError{
+			Message: fmt.Sprintf("label '%s' not found", labelName),
+			Line:    0, // Could be improved by tracking the GOTO statement line
+		}
 	}
 
 	// Find the index of this label in the program
 	labelIndex := -1
-	for idx, stmt := range i.program.Statements { // Fix: rename loop variable to avoid conflict
+	for idx, stmt := range i.program.Statements {
 		if stmt == label {
 			labelIndex = idx
 			break
@@ -155,7 +176,10 @@ func (i *Interpreter) gotoLabel(labelName string) error {
 	}
 
 	if labelIndex == -1 {
-		return fmt.Errorf("label '%s' not found in program", labelName)
+		return &InterpreterError{
+			Message: fmt.Sprintf("label '%s' not found in program", labelName),
+			Line:    label.Token.Line,
+		}
 	}
 
 	// Execute from the statement after the label
@@ -172,7 +196,7 @@ func (i *Interpreter) collectLabels() {
 func (i *Interpreter) collectLabelsFromStatement(stmt ast.Statement) {
 	switch node := stmt.(type) {
 	case *ast.LabelStatement:
-		i.labels[node.Name.Value] = node // Fix: store pointer, not value
+		i.labels[node.Name.Value] = node
 	case *ast.ChoiceStatement:
 		for _, option := range node.Options {
 			i.collectLabelsFromBlock(option.Body)
@@ -185,5 +209,25 @@ func (i *Interpreter) collectLabelsFromStatement(stmt ast.Statement) {
 func (i *Interpreter) collectLabelsFromBlock(block *ast.BlockStatement) {
 	for _, stmt := range block.Statements {
 		i.collectLabelsFromStatement(stmt)
+	}
+}
+
+// Helper function to get line number from statement
+func (i *Interpreter) getStatementLine(stmt ast.Statement) int {
+	switch node := stmt.(type) {
+	case *ast.LabelStatement:
+		return node.Token.Line
+	case *ast.DialogStatement:
+		return node.Character.Token.Line
+	case *ast.ChoiceStatement:
+		return node.Token.Line
+	case *ast.GotoStatement:
+		return node.Token.Line
+	case *ast.EndStatement:
+		return node.Token.Line
+	case *ast.BlockStatement:
+		return node.Token.Line
+	default:
+		return 0
 	}
 }

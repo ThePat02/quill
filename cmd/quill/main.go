@@ -65,9 +65,12 @@ func run(source string) {
 	}
 
 	interpreter := interpreter.New(program)
-	err := interpreter.Interpret()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Runtime error: %v\n", err)
+	interpreterErrors := interpreter.Interpret()
+
+	if len(interpreterErrors) > 0 {
+		for _, err := range interpreterErrors {
+			fmt.Fprintf(os.Stderr, "InterpreterError at line %d: %s\n", err.Line, err.Message)
+		}
 		return
 	}
 }
