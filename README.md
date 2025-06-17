@@ -49,7 +49,7 @@ If you are on Linux, you can grab the binary from the latest workflow artifacts.
 
 You can run Quill in your terminal with the following command. Make sure you have the Quill binary in your PATH or specify the path to the binary directly.
 ```bash
-quill [options] <file>
+quill [flags] <file>
 ```
 
 ### Building
@@ -58,3 +58,7 @@ To build Quill from source on Linux, you need to have Go installed. Then, run th
 ```bash
 go build -o quill ./cmd/quill
 ```
+
+## Utilities
+- VS Code Extension: https://github.com/ThePat02/quill-vscode
+- Linter (Use the `-p` flag to only parse the file without executing it.)
