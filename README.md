@@ -38,3 +38,16 @@ ELIZABETH: "Good day, Mr. Darcy."
 END
 ``` 
 For a comprehensive example showcasing all available syntax features, please refer to [syntax.q](/examples/syntax.q)!
+
+## Usage
+You can run Quill in your terminal with the following command. Make sure you have the Quill binary in your PATH or specify the path to the binary directly.
+```bash
+quill [options] <file>
+```
+
+### Building
+To build Quill from source on Linux, you need to have Go installed. Then, run the following command:
+
+```bash
+go build -o quill ./cmd/quill
+```
