@@ -1,7 +1,11 @@
 <p align="left">
     <img src="assets/banner.png" alt="Quill Banner" width="50%">
 </p>
+
 ![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/ThePat02/quill/go.yml)
+![GitHub go.mod Go version](https://img.shields.io/github/go-mod/go-version/thepat02/quill)
+![GitHub License](https://img.shields.io/github/license/thepat02/quill)
+
 
 Quill is a simple, lightweight and easy-to-use scripting language designed for interactive fiction and branching dialog written in Go. Dialog is written in a natural, human-readable format, making it accessible for writers and developers alike.
 
