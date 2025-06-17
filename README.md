@@ -1,6 +1,7 @@
 <p align="left">
     <img src="assets/banner.png" alt="Quill Banner" width="50%">
 </p>
+![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/ThePat02/quill/go.yml)
 
 Quill is a simple, lightweight and easy-to-use scripting language designed for interactive fiction and branching dialog written in Go. Dialog is written in a natural, human-readable format, making it accessible for writers and developers alike.
 
@@ -40,6 +41,8 @@ END
 For a comprehensive example showcasing all available syntax features, please refer to [syntax.q](/examples/syntax.q)!
 
 ## Usage
+If you are on Linux, you can grab the binary from the latest workflow artifacts. On windows you need to build it from source, which is straightforward.
+
 You can run Quill in your terminal with the following command. Make sure you have the Quill binary in your PATH or specify the path to the binary directly.
 ```bash
 quill [options] <file>
