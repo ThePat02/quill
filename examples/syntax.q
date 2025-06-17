@@ -1,7 +1,9 @@
-# Heyo! This is the most basic script that I need to get to work!
+# Syntax Example
 
+# Labels are used to define sections of dialogue that can be jumped to
 LABEL start
 
+# Tags can be defined with square brackets after dialogue or choices
 ALEX: "Welcome to our little gathering!" [tag1]
 BELLA: "Thanks for having us, Alex!" [tag1, tag2]
 CHARLIE: "Hey everyone!"
@@ -9,6 +11,7 @@ CHARLIE: "Hey everyone!"
 ALEX: "Should we play a game?"
 BELLA: "Oh, that sounds fun!"
 
+# RANDOM lets you randomly choose between different dialogue options
 RANDOM {
     { BELLA: "How about a trivia game?" } [tag1, tag2],
     { CHARLIE: "Let's play some games!" } [tag3],
@@ -17,6 +20,7 @@ RANDOM {
     }
 }
 
+# CHOICE lets you present options to the player
 CHOICE {
     "Let's play a trivia game" {
         ALEX: "Great choice! Here's a question..."
