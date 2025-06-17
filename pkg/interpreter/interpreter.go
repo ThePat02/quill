@@ -91,8 +91,9 @@ func New(program *ast.Program) *Interpreter {
 func (i *Interpreter) executeStatement(stmt ast.Statement) *InterpreterResult {
 	switch node := stmt.(type) {
 	case *ast.LabelStatement:
-		// Labels are just markers, continue to next statement
-		return i.Step()
+		// Labels are just markers, don't do anything special
+		// Let the normal flow continue to the next statement
+		return nil
 
 	case *ast.DialogStatement:
 		return i.executeDialog(node)
@@ -262,7 +263,7 @@ func (i *Interpreter) executeGoto(gotoStmt *ast.GotoStatement) *InterpreterResul
 	// Clear execution stack and jump to label
 	i.executionStack = make([]executionFrame, 0)
 	i.currentStatements = i.program.Statements
-	i.statementIndex = labelIndex + 1 // Skip the label itself
+	i.statementIndex = labelIndex // Don't add 1 here, Step() will increment it
 
 	return i.Step()
 }
@@ -368,7 +369,14 @@ func (i *Interpreter) Step() *InterpreterResult {
 	stmt := i.currentStatements[i.statementIndex]
 	i.statementIndex++
 
-	return i.executeStatement(stmt)
+	result := i.executeStatement(stmt)
+
+	// If executeStatement returns nil (like for labels), continue to next statement
+	if result == nil {
+		return i.Step()
+	}
+
+	return result
 }
 
 func (i *Interpreter) HandleChoiceInput(choiceIndex int) *InterpreterResult {

@@ -165,6 +165,18 @@ func runInterpreter(interp *interpreter.Interpreter) {
 					fmt.Fprintf(os.Stderr, "Error: %s\n", errorData.Message)
 					return
 				}
+
+				// Process the result from handling the choice
+				if choiceResult.Type == interpreter.DialogResult {
+					dialogData := choiceResult.Data.(interpreter.DialogData)
+					fmt.Printf("%s: %s", dialogData.Character, dialogData.Text)
+					if len(dialogData.Tags) > 0 {
+						fmt.Printf(" [%s]", strings.Join(dialogData.Tags, ", "))
+					}
+					fmt.Println()
+				}
+				// Note: We don't handle other result types here as they'll be processed in the next loop iteration
+
 				break
 			}
 
