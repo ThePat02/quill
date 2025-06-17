@@ -31,7 +31,7 @@ CHOICE {
         BELLA: "Perfect! I know some fun ones!"
         GOTO party_games
     },
-    "I should probably go..." { GOTO end }
+    "I should probably go..." { GOTO ending }
 }
 
 LABEL trivia_path
@@ -56,7 +56,7 @@ CHOICE {
     "Another time maybe..." { }
 }
 
-LABEL end
+LABEL ending
 
 BELLA: "Thanks for joining us! See you next time!"
 

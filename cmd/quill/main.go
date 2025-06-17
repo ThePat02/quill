@@ -1,12 +1,15 @@
 package main
 
 import (
+	"bufio"
 	"flag"
 	"fmt"
 	"os"
 	"quill/pkg/interpreter"
 	"quill/pkg/parser"
 	"quill/pkg/scanner"
+	"strconv"
+	"strings"
 )
 
 type Args struct {
@@ -55,12 +58,12 @@ func parseArgs() (Args, error) {
 }
 
 func runFile(file string, args Args) {
-	fileConent, err := os.ReadFile(file)
+	fileContent, err := os.ReadFile(file)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error reading file %s: %v\n", file, err)
 		return
 	}
-	run(string(fileConent), args)
+	run(string(fileContent), args)
 }
 
 func run(source string, args Args) {
@@ -107,14 +110,76 @@ func run(source string, args Args) {
 		return
 	}
 
-	interpreter := interpreter.New(program)
-	interpreterErrors := interpreter.Interpret()
+	// Run the interpreter with the new result-based model
+	runInterpreter(interpreter.New(program))
+}
 
-	if len(interpreterErrors) > 0 {
-		for _, err := range interpreterErrors {
-			fmt.Fprintf(os.Stderr, "InterpreterError at line %d: %s\n", err.Line, err.Message)
+func runInterpreter(interp *interpreter.Interpreter) {
+	reader := bufio.NewReader(os.Stdin)
+
+	fmt.Println("-- Starting script execution ---")
+
+	for !interp.IsEnded() {
+		result := interp.Step()
+
+		switch result.Type {
+		case interpreter.DialogResult:
+			data := result.Data.(interpreter.DialogData)
+			fmt.Printf("%s: %s", data.Character, data.Text)
+			if len(data.Tags) > 0 {
+				fmt.Printf(" [%s]", strings.Join(data.Tags, ", "))
+			}
+			fmt.Println()
+
+		case interpreter.ChoiceResult:
+			data := result.Data.(interpreter.ChoiceData)
+			fmt.Println("\nChoices:")
+			for _, option := range data.Options {
+				fmt.Printf("%d. %s", option.Index+1, option.Text)
+				if len(option.Tags) > 0 {
+					fmt.Printf(" [%s]", strings.Join(option.Tags, ", "))
+				}
+				fmt.Println()
+			}
+
+			// Get user input for choice
+			for {
+				fmt.Print("\nEnter your choice (1-" + strconv.Itoa(len(data.Options)) + "): ")
+				input, err := reader.ReadString('\n')
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "Error reading input: %v\n", err)
+					return
+				}
+
+				input = strings.TrimSpace(input)
+				choice, err := strconv.Atoi(input)
+				if err != nil || choice < 1 || choice > len(data.Options) {
+					fmt.Println("Invalid choice. Please try again.")
+					continue
+				}
+
+				// Handle the choice (convert from 1-based to 0-based index)
+				choiceResult := interp.HandleChoiceInput(choice - 1)
+				if choiceResult.Type == interpreter.ErrorResult {
+					errorData := choiceResult.Data.(interpreter.ErrorData)
+					fmt.Fprintf(os.Stderr, "Error: %s\n", errorData.Message)
+					return
+				}
+				break
+			}
+
+		case interpreter.EndResult:
+			fmt.Println("\n--- End of script ---")
+			return
+
+		case interpreter.ErrorResult:
+			errorData := result.Data.(interpreter.ErrorData)
+			fmt.Fprintf(os.Stderr, "Runtime Error at line %d: %s\n", errorData.Line, errorData.Message)
+			return
+
+		default:
+			fmt.Fprintf(os.Stderr, "Unknown result type: %d\n", result.Type)
+			return
 		}
-		return
 	}
-
 }

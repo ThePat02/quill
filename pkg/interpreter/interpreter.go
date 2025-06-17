@@ -1,20 +1,63 @@
 package interpreter
 
 import (
-	"bufio"
-	"fmt"
 	"math/rand"
-	"os"
 	"quill/pkg/ast"
-	"strconv"
-	"strings"
 	"time"
 )
 
+type ResultType int
+
+const (
+	DialogResult ResultType = iota
+	ChoiceResult
+	EndResult
+	ErrorResult
+)
+
+type InterpreterResult struct {
+	Type ResultType
+	Data interface{}
+}
+
+type DialogData struct {
+	Character string
+	Text      string
+	Tags      []string
+}
+
+type ChoiceOption struct {
+	Index int
+	Text  string
+	Tags  []string
+}
+
+type ChoiceData struct {
+	Options []ChoiceOption
+}
+
+type ExecutionState int
+
+const (
+	StateReady ExecutionState = iota
+	StateWaitingForChoice
+	StateEnded
+	StateError
+)
+
+type executionFrame struct {
+	statements []ast.Statement
+	index      int
+}
+
 type Interpreter struct {
-	program *ast.Program
-	labels  map[string]*ast.LabelStatement
-	scanner *bufio.Scanner
+	program           *ast.Program
+	labels            map[string]*ast.LabelStatement
+	state             ExecutionState
+	currentStatements []ast.Statement
+	statementIndex    int
+	pendingChoice     *ast.ChoiceStatement
+	executionStack    []executionFrame
 }
 
 type InterpreterError struct {
@@ -22,11 +65,19 @@ type InterpreterError struct {
 	Line    int
 }
 
+type ErrorData struct {
+	Message string
+	Line    int
+}
+
 func New(program *ast.Program) *Interpreter {
 	interpreter := &Interpreter{
-		program: program,
-		labels:  make(map[string]*ast.LabelStatement),
-		scanner: bufio.NewScanner(os.Stdin),
+		program:           program,
+		labels:            make(map[string]*ast.LabelStatement),
+		state:             StateReady,
+		currentStatements: program.Statements,
+		statementIndex:    0,
+		executionStack:    make([]executionFrame, 0),
 	}
 
 	interpreter.collectLabels()
@@ -37,51 +88,11 @@ func New(program *ast.Program) *Interpreter {
 	return interpreter
 }
 
-func (i *Interpreter) Interpret() []InterpreterError {
-	var errors []InterpreterError = make([]InterpreterError, 0)
-
-	fmt.Println("--- Starting Dialog ---")
-	err := i.executeStatements(i.program.Statements)
-	if err != nil {
-		errors = append(errors, *err)
-	}
-
-	return errors
-}
-
-func (i *Interpreter) executeStatements(statements []ast.Statement) *InterpreterError {
-	for _, stmt := range statements {
-		result, err := i.executeStatement(stmt)
-		if err != nil {
-			return err
-		}
-
-		// Handle control flow
-		switch result {
-		case "END":
-			fmt.Println("--- Dialog Ended ---")
-			return nil
-		case "":
-			// Continue to next statement
-			continue
-		default:
-			// Handle GOTO
-			if strings.HasPrefix(result, "GOTO:") {
-				labelName := strings.TrimPrefix(result, "GOTO:")
-				return i.gotoLabel(labelName)
-			}
-		}
-	}
-
-	fmt.Println("--- Dialog Completed ---")
-	return nil
-}
-
-func (i *Interpreter) executeStatement(stmt ast.Statement) (string, *InterpreterError) {
+func (i *Interpreter) executeStatement(stmt ast.Statement) *InterpreterResult {
 	switch node := stmt.(type) {
 	case *ast.LabelStatement:
-		// Labels are just markers, no execution needed
-		return "", nil
+		// Labels are just markers, continue to next statement
+		return i.Step()
 
 	case *ast.DialogStatement:
 		return i.executeDialog(node)
@@ -93,87 +104,98 @@ func (i *Interpreter) executeStatement(stmt ast.Statement) (string, *Interpreter
 		return i.executeRandom(node)
 
 	case *ast.GotoStatement:
-		return "GOTO:" + node.Label.Value, nil
+		return i.executeGoto(node)
 
 	case *ast.EndStatement:
-		return "END", nil
+		i.state = StateEnded
+		return &InterpreterResult{
+			Type: EndResult,
+			Data: nil,
+		}
 
 	case *ast.BlockStatement:
 		return i.executeBlock(node)
 
 	default:
-		return "", &InterpreterError{
-			Message: fmt.Sprintf("unknown statement type: %T", stmt),
-			Line:    i.getStatementLine(stmt),
+		i.state = StateError
+		return &InterpreterResult{
+			Type: ErrorResult,
+			Data: ErrorData{
+				Message: "unknown statement type",
+				Line:    i.getStatementLine(stmt),
+			},
 		}
 	}
 }
 
-func (i *Interpreter) executeDialog(dialog *ast.DialogStatement) (string, *InterpreterError) {
+func (i *Interpreter) executeDialog(dialog *ast.DialogStatement) *InterpreterResult {
 	character := dialog.Character.Value
 	text := dialog.Text.Value
 
-	// Format the output with tags if present
-	output := fmt.Sprintf("%s: %s", character, text)
+	// Extract tags if present
+	var tags []string
 	if dialog.Tags != nil && len(dialog.Tags.Tags) > 0 {
-		tagList := make([]string, len(dialog.Tags.Tags))
+		tags = make([]string, len(dialog.Tags.Tags))
 		for idx, tag := range dialog.Tags.Tags {
-			tagList[idx] = tag.Value
+			tags[idx] = tag.Value
 		}
-		output += fmt.Sprintf(" [%s]", strings.Join(tagList, ", "))
 	}
 
-	fmt.Println(output)
-	return "", nil
+	return &InterpreterResult{
+		Type: DialogResult,
+		Data: DialogData{
+			Character: character,
+			Text:      text,
+			Tags:      tags,
+		},
+	}
 }
 
-func (i *Interpreter) executeChoice(choice *ast.ChoiceStatement) (string, *InterpreterError) {
-	fmt.Println("\nChoices:")
+func (i *Interpreter) executeChoice(choice *ast.ChoiceStatement) *InterpreterResult {
+	options := make([]ChoiceOption, len(choice.Options))
+
 	for idx, option := range choice.Options {
 		text := ""
 		if stringLit, ok := option.Text.(*ast.StringLiteral); ok {
 			text = stringLit.Value
 		}
 
-		// Add tags to choice display if present
-		output := fmt.Sprintf("%d. %s", idx+1, text)
+		var tags []string
 		if option.Tags != nil && len(option.Tags.Tags) > 0 {
-			tagList := make([]string, len(option.Tags.Tags))
+			tags = make([]string, len(option.Tags.Tags))
 			for i, tag := range option.Tags.Tags {
-				tagList[i] = tag.Value
+				tags[i] = tag.Value
 			}
-			output += fmt.Sprintf(" [%s]", strings.Join(tagList, ", "))
 		}
-		fmt.Println(output)
-	}
 
-	fmt.Print("Enter your choice (number): ")
-	if !i.scanner.Scan() {
-		return "", &InterpreterError{
-			Message: "failed to read input",
-			Line:    choice.Token.Line,
+		options[idx] = ChoiceOption{
+			Index: idx,
+			Text:  text,
+			Tags:  tags,
 		}
 	}
 
-	input := strings.TrimSpace(i.scanner.Text())
-	choiceNum, err := strconv.Atoi(input)
-	if err != nil || choiceNum < 1 || choiceNum > len(choice.Options) {
-		fmt.Println("Invalid choice. Please try again.")
-		return i.executeChoice(choice) // Retry
+	// Store choice and wait for input
+	i.pendingChoice = choice
+	i.state = StateWaitingForChoice
+
+	return &InterpreterResult{
+		Type: ChoiceResult,
+		Data: ChoiceData{
+			Options: options,
+		},
 	}
-
-	selectedOption := choice.Options[choiceNum-1]
-	fmt.Printf("You chose: %s\n", selectedOption.Text.(*ast.StringLiteral).Value)
-
-	// Execute the body of the selected choice
-	return i.executeBlock(selectedOption.Body)
 }
 
-func (i *Interpreter) executeRandom(random *ast.RandomStatement) (string, *InterpreterError) {
+func (i *Interpreter) executeRandom(random *ast.RandomStatement) *InterpreterResult {
 	if len(random.Options) == 0 {
-		return "", &InterpreterError{
-			Message: "RANDOM block has no options",
-			Line:    random.Token.Line,
+		i.state = StateError
+		return &InterpreterResult{
+			Type: ErrorResult,
+			Data: ErrorData{
+				Message: "RANDOM block has no options",
+				Line:    random.Token.Line,
+			},
 		}
 	}
 
@@ -185,28 +207,35 @@ func (i *Interpreter) executeRandom(random *ast.RandomStatement) (string, *Inter
 	return i.executeBlock(selectedOption.Body)
 }
 
-func (i *Interpreter) executeBlock(block *ast.BlockStatement) (string, *InterpreterError) {
-	for _, stmt := range block.Statements {
-		result, err := i.executeStatement(stmt)
-		if err != nil {
-			return "", err
-		}
-
-		// If we hit a control flow statement, return it
-		if result != "" {
-			return result, nil
-		}
+func (i *Interpreter) executeBlock(block *ast.BlockStatement) *InterpreterResult {
+	if len(block.Statements) == 0 {
+		return i.Step()
 	}
 
-	return "", nil
+	// Push current context to stack
+	i.executionStack = append(i.executionStack, executionFrame{
+		statements: i.currentStatements,
+		index:      i.statementIndex,
+	})
+
+	// Set up new execution context
+	i.currentStatements = block.Statements
+	i.statementIndex = 0
+
+	return i.Step()
 }
 
-func (i *Interpreter) gotoLabel(labelName string) *InterpreterError {
+func (i *Interpreter) executeGoto(gotoStmt *ast.GotoStatement) *InterpreterResult {
+	labelName := gotoStmt.Label.Value
 	label, exists := i.labels[labelName]
 	if !exists {
-		return &InterpreterError{
-			Message: fmt.Sprintf("label '%s' not found", labelName),
-			Line:    0, // Could be improved by tracking the GOTO statement line
+		i.state = StateError
+		return &InterpreterResult{
+			Type: ErrorResult,
+			Data: ErrorData{
+				Message: "label '" + labelName + "' not found",
+				Line:    gotoStmt.Token.Line,
+			},
 		}
 	}
 
@@ -220,15 +249,22 @@ func (i *Interpreter) gotoLabel(labelName string) *InterpreterError {
 	}
 
 	if labelIndex == -1 {
-		return &InterpreterError{
-			Message: fmt.Sprintf("label '%s' not found in program", labelName),
-			Line:    label.Token.Line,
+		i.state = StateError
+		return &InterpreterResult{
+			Type: ErrorResult,
+			Data: ErrorData{
+				Message: "label '" + labelName + "' not found in program",
+				Line:    label.Token.Line,
+			},
 		}
 	}
 
-	// Execute from the statement after the label
-	remainingStatements := i.program.Statements[labelIndex+1:]
-	return i.executeStatements(remainingStatements)
+	// Clear execution stack and jump to label
+	i.executionStack = make([]executionFrame, 0)
+	i.currentStatements = i.program.Statements
+	i.statementIndex = labelIndex + 1 // Skip the label itself
+
+	return i.Step()
 }
 
 func (i *Interpreter) collectLabels() {
@@ -280,4 +316,100 @@ func (i *Interpreter) getStatementLine(stmt ast.Statement) int {
 	default:
 		return 0
 	}
+}
+
+func (i *Interpreter) Step() *InterpreterResult {
+	if i.state == StateEnded {
+		return &InterpreterResult{
+			Type: EndResult,
+			Data: nil,
+		}
+	}
+
+	if i.state == StateError {
+		return &InterpreterResult{
+			Type: ErrorResult,
+			Data: ErrorData{
+				Message: "Interpreter in error state",
+				Line:    0,
+			},
+		}
+	}
+
+	if i.state == StateWaitingForChoice {
+		return &InterpreterResult{
+			Type: ErrorResult,
+			Data: ErrorData{
+				Message: "Cannot step while waiting for choice input",
+				Line:    0,
+			},
+		}
+	}
+
+	// Execute next statement
+	if i.statementIndex >= len(i.currentStatements) {
+		// No more statements, check if we can pop from stack
+		if len(i.executionStack) > 0 {
+			frame := i.executionStack[len(i.executionStack)-1]
+			i.executionStack = i.executionStack[:len(i.executionStack)-1]
+			i.currentStatements = frame.statements
+			i.statementIndex = frame.index
+			return i.Step()
+		} else {
+			// Program completed
+			i.state = StateEnded
+			return &InterpreterResult{
+				Type: EndResult,
+				Data: nil,
+			}
+		}
+	}
+
+	stmt := i.currentStatements[i.statementIndex]
+	i.statementIndex++
+
+	return i.executeStatement(stmt)
+}
+
+func (i *Interpreter) HandleChoiceInput(choiceIndex int) *InterpreterResult {
+	if i.state != StateWaitingForChoice || i.pendingChoice == nil {
+		return &InterpreterResult{
+			Type: ErrorResult,
+			Data: ErrorData{
+				Message: "Not waiting for choice input",
+				Line:    0,
+			},
+		}
+	}
+
+	if choiceIndex < 0 || choiceIndex >= len(i.pendingChoice.Options) {
+		return &InterpreterResult{
+			Type: ErrorResult,
+			Data: ErrorData{
+				Message: "Invalid choice index",
+				Line:    i.pendingChoice.Token.Line,
+			},
+		}
+	}
+
+	// Execute the selected choice's body
+	selectedOption := i.pendingChoice.Options[choiceIndex]
+	i.pendingChoice = nil
+	i.state = StateReady
+
+	// Push current execution context and execute choice body
+	return i.executeBlock(selectedOption.Body)
+}
+
+// Helper methods for external use
+func (i *Interpreter) GetState() ExecutionState {
+	return i.state
+}
+
+func (i *Interpreter) IsEnded() bool {
+	return i.state == StateEnded
+}
+
+func (i *Interpreter) IsWaitingForChoice() bool {
+	return i.state == StateWaitingForChoice
 }
