@@ -1,6 +1,6 @@
 package scanner
 
-import "quill/pkg/token"
+import "quill/internal/token"
 
 func (scanner *Scanner) advance() byte {
 	scanner.current++

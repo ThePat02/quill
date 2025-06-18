@@ -1,6 +1,6 @@
 package parser
 
-import "quill/pkg/token"
+import "quill/internal/token"
 
 func (p *Parser) peek() token.Token {
 	if p.current >= len(p.tokens) {

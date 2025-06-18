@@ -2,7 +2,7 @@ package interpreter
 
 import (
 	"math/rand"
-	"quill/pkg/ast"
+	"quill/internal/ast"
 	"time"
 )
 

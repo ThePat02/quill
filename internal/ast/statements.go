@@ -1,6 +1,6 @@
 package ast
 
-import "quill/pkg/token"
+import "quill/internal/token"
 
 type LabelStatement struct {
 	Token token.Token

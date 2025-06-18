@@ -1,8 +1,8 @@
 package parser
 
 import (
-	"quill/pkg/ast"
-	"quill/pkg/token"
+	"quill/internal/ast"
+	"quill/internal/token"
 )
 
 type Parser struct {

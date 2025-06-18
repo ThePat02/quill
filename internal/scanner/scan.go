@@ -1,6 +1,6 @@
 package scanner
 
-import "quill/pkg/token"
+import "quill/internal/token"
 
 func (scanner *Scanner) scanString() *ScannerError {
 	for scanner.peek() != '"' && !scanner.isAtEnd() {

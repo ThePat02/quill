@@ -5,9 +5,9 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"quill/pkg/interpreter"
-	"quill/pkg/parser"
-	"quill/pkg/scanner"
+	"quill/internal/interpreter"
+	"quill/internal/parser"
+	"quill/internal/scanner"
 	"strconv"
 	"strings"
 )
