@@ -13,33 +13,25 @@ Quill is a simple, lightweight and easy-to-use scripting language designed for i
 > This project is still in development and is missing some features. If you encounter any issues, please open an issue on GitHub.
 
 ```python
-LABEL start
-
-ELIZABETH: "It is a truth universally acknowledged..." [pride]
-DARCY: "That a single man in possession of a good fortune..." [pride]
-ELIZABETH: "Must be in want of a wife!"
+MrsBennet: "My dear Mr. Bennet, have you heard that Netherfield Park is let at last?"
 
 CHOICE {
-    "Ask about Mr. Darcy's fortune" {
-        ELIZABETH: "And what is your fortune, sir?"
-        DARCY: "My income is considerable."
-    },
-    "Change the subject" {
-        ELIZABETH: "Shall we discuss the weather?"
-        GOTO weather
+    "Yes." { MrBennet: "I think I have!" } [lie, noncanonical],
+    "No." {
+        MrBennet: "I have not!"
+        GOTO news
     }
 }
 
-LABEL weather
-DARCY: "The grounds are quite pleasant today."
+MrsBennet: "Oh, you haven't! I am quiet sure of it!"
+MrBennet: "Well, you caught me, but I cannot believe it is true."
 
-CHOICE {
-    "Return to start" { GOTO start },
-    "Take your leave" { GOTO ending }
-}
+LABEL news
 
-LABEL ending
-ELIZABETH: "Good day, Mr. Darcy."
+MrsBennet: "But it is, for Mrs. Long has just been here, and she told me all about it."
+MrsBennet: "Do you not want to know who has taken it?"
+MrBennet: "You want to tell me, and I have no objection to hearing it."
+
 END
 ``` 
 For a comprehensive example showcasing all available syntax features, please refer to [syntax.q](/examples/syntax.q)!
