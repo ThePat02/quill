@@ -19,9 +19,14 @@ type Program struct {
 }
 
 func (p *Program) String() string {
+	if p == nil {
+		return "<nil Program>"
+	}
 	var out string
 	for _, stmt := range p.Statements {
-		out += stmt.String() + "\n"
+		if stmt != nil {
+			out += stmt.String() + "\n"
+		}
 	}
 	return out
 }

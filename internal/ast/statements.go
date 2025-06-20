@@ -9,7 +9,14 @@ type LabelStatement struct {
 
 func (ls *LabelStatement) statementNode() {}
 func (ls *LabelStatement) String() string {
-	return ls.Token.String() + " " + ls.Name.String()
+	if ls == nil {
+		return "<nil LabelStatement>"
+	}
+	result := ls.Token.Lexeme
+	if ls.Name != nil {
+		result += " " + ls.Name.String()
+	}
+	return result
 }
 
 type GotoStatement struct {
@@ -19,7 +26,14 @@ type GotoStatement struct {
 
 func (gs *GotoStatement) statementNode() {}
 func (gs *GotoStatement) String() string {
-	return gs.Token.String() + " " + gs.Label.String()
+	if gs == nil {
+		return "<nil GotoStatement>"
+	}
+	result := gs.Token.Lexeme
+	if gs.Label != nil {
+		result += " " + gs.Label.String()
+	}
+	return result
 }
 
 type EndStatement struct {
@@ -28,7 +42,10 @@ type EndStatement struct {
 
 func (es *EndStatement) statementNode() {}
 func (es *EndStatement) String() string {
-	return es.Token.String()
+	if es == nil {
+		return "<nil EndStatement>"
+	}
+	return es.Token.Lexeme
 }
 
 type DialogStatement struct {
@@ -40,7 +57,21 @@ type DialogStatement struct {
 
 func (ds *DialogStatement) statementNode() {}
 func (ds *DialogStatement) String() string {
-	return ds.Character.String() + ds.Colon.String() + " " + ds.Text.String() + " | " + ds.Tags.String()
+	if ds == nil {
+		return "<nil DialogStatement>"
+	}
+	result := ""
+	if ds.Character != nil {
+		result += ds.Character.String()
+	}
+	result += ": "
+	if ds.Text != nil {
+		result += ds.Text.String()
+	}
+	if ds.Tags != nil {
+		result += " " + ds.Tags.String()
+	}
+	return result
 }
 
 type ChoiceStatement struct {
@@ -55,21 +86,35 @@ type ChoiceOption struct {
 }
 
 func (co *ChoiceOption) String() string {
-	result := "Choice: " + co.Text.String()
+	if co == nil {
+		return "<nil ChoiceOption>"
+	}
+	result := ""
+	if co.Text != nil {
+		result += co.Text.String()
+	}
+	if co.Body != nil {
+		result += " " + co.Body.String()
+	}
 	if co.Tags != nil {
 		result += " " + co.Tags.String()
 	}
-	result += "\n" + co.Body.String()
 	return result
 }
 
 func (cs *ChoiceStatement) statementNode() {}
 func (cs *ChoiceStatement) String() string {
-	var optionsStr string
-	for _, option := range cs.Options {
-		optionsStr += option.String() + "\n"
+	if cs == nil {
+		return "<nil ChoiceStatement>"
 	}
-	return cs.Token.String() + "\n" + optionsStr
+	result := cs.Token.Lexeme + " {\n"
+	for _, option := range cs.Options {
+		if option != nil {
+			result += "  " + option.String() + "\n"
+		}
+	}
+	result += "}"
+	return result
 }
 
 type BlockStatement struct {
@@ -79,11 +124,17 @@ type BlockStatement struct {
 
 func (bs *BlockStatement) statementNode() {}
 func (bs *BlockStatement) String() string {
-	var out string
-	for _, stmt := range bs.Statements {
-		out += stmt.String() + "\n"
+	if bs == nil {
+		return "<nil BlockStatement>"
 	}
-	return bs.Token.String() + "\n" + out
+	result := "{\n"
+	for _, stmt := range bs.Statements {
+		if stmt != nil {
+			result += "  " + stmt.String() + "\n"
+		}
+	}
+	result += "}"
+	return result
 }
 
 type RandomStatement struct {
@@ -97,19 +148,103 @@ type RandomOption struct {
 }
 
 func (ro *RandomOption) String() string {
-	result := "Random Option:"
+	if ro == nil {
+		return "<nil RandomOption>"
+	}
+	result := ""
+	if ro.Body != nil {
+		result += ro.Body.String()
+	}
 	if ro.Tags != nil {
 		result += " " + ro.Tags.String()
 	}
-	result += "\n" + ro.Body.String()
 	return result
 }
 
 func (rs *RandomStatement) statementNode() {}
 func (rs *RandomStatement) String() string {
-	var optionsStr string
-	for _, option := range rs.Options {
-		optionsStr += option.String() + "\n"
+	if rs == nil {
+		return "<nil RandomStatement>"
 	}
-	return rs.Token.String() + "\n" + optionsStr
+	result := rs.Token.Lexeme + " {\n"
+	for _, option := range rs.Options {
+		if option != nil {
+			result += "  " + option.String() + "\n"
+		}
+	}
+	result += "}"
+	return result
+}
+
+// Variable Declaration Statement
+type LetStatement struct {
+	Token token.Token // the LET token
+	Name  *Identifier
+	Value Expression
+}
+
+func (ls *LetStatement) statementNode() {}
+func (ls *LetStatement) String() string {
+	if ls == nil {
+		return "<nil LetStatement>"
+	}
+	result := ls.Token.Lexeme
+	if ls.Name != nil {
+		result += " " + ls.Name.String()
+	}
+	result += " = "
+	if ls.Value != nil {
+		result += ls.Value.String()
+	}
+	return result
+}
+
+// Assignment Statement
+type AssignStatement struct {
+	Name     *Identifier
+	Operator token.Token // =, +=, -=
+	Value    Expression
+}
+
+func (as *AssignStatement) statementNode() {}
+func (as *AssignStatement) String() string {
+	if as == nil {
+		return "<nil AssignStatement>"
+	}
+	result := ""
+	if as.Name != nil {
+		result += as.Name.String()
+	}
+	result += " " + as.Operator.Lexeme + " "
+	if as.Value != nil {
+		result += as.Value.String()
+	}
+	return result
+}
+
+// If Statement
+type IfStatement struct {
+	Token       token.Token // the IF token
+	Condition   Expression
+	Consequence *BlockStatement
+	Alternative *BlockStatement // can be nil
+}
+
+func (is *IfStatement) statementNode() {}
+func (is *IfStatement) String() string {
+	if is == nil {
+		return "<nil IfStatement>"
+	}
+	result := is.Token.Lexeme + " "
+	if is.Condition != nil {
+		result += is.Condition.String()
+	}
+	result += " "
+	if is.Consequence != nil {
+		result += is.Consequence.String()
+	}
+	if is.Alternative != nil {
+		result += " ELSE " + is.Alternative.String()
+	}
+	return result
 }

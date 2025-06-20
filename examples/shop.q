@@ -37,6 +37,7 @@ CHOICE {
 }
 
 SHOPKEEP: "Thank you for your purchase! Is there anything else I can assist you with?"
+GOTO shop
 
 LABEL leave_shop
 
