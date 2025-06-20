@@ -17,34 +17,49 @@ const (
 	COMMENT TokenType = "COMMENT" // Comments in the source code
 
 	// Structural
-	COLON     TokenType = ":"
-	COMMA     TokenType = ","
-	SEMICOLON TokenType = ";"
-	LPAREN    TokenType = "("
-	RPAREN    TokenType = ")"
-	LBRACE    TokenType = "{"
-	RBRACE    TokenType = "}"
-	LBRACKET  TokenType = "["
-	RBRACKET  TokenType = "]"
-	ASSIGN    TokenType = "="
-	PLUS      TokenType = "+"
-	MINUS     TokenType = "-"
-	STAR      TokenType = "*"
-	ARROW     TokenType = "->"
-	QUESTION  TokenType = "?"
-	EXLAM     TokenType = "!"
-	GT        TokenType = ">"
-	LT        TokenType = "<"
+	COLON        TokenType = ":"
+	COMMA        TokenType = ","
+	SEMICOLON    TokenType = ";"
+	LPAREN       TokenType = "("
+	RPAREN       TokenType = ")"
+	LBRACE       TokenType = "{"
+	RBRACE       TokenType = "}"
+	LBRACKET     TokenType = "["
+	RBRACKET     TokenType = "]"
+	ASSIGN       TokenType = "="
+	PLUS         TokenType = "+"
+	PLUS_ASSIGN  TokenType = "+="
+	MINUS        TokenType = "-"
+	MINUS_ASSIGN TokenType = "-="
+	STAR         TokenType = "*"
+	ARROW        TokenType = "->"
+	QUESTION     TokenType = "?"
+	EQ           TokenType = "=="
+	NE           TokenType = "!="
+	GT           TokenType = ">"
+	LT           TokenType = "<"
+	GE           TokenType = ">="
+	LE           TokenType = "<="
+	AND          TokenType = "&&"
+	OR           TokenType = "||"
+	NOT          TokenType = "!"
 )
 
 // Keywords
 const (
-	SCENE  TokenType = "SCENE" // Scene keyword, used to define a scene in the script
-	RANDOM TokenType = "RANDOM"
+	SCENE  TokenType = "SCENE"  // Unused keyword
+	RANDOM TokenType = "RANDOM" // Random keyword, used to indicate a random choice in the script
 	GOTO   TokenType = "GOTO"   // Goto keyword, used for jumping to a label in the script
 	LABEL  TokenType = "LABEL"  // Label keyword, used to define a label for goto statements
 	CHOICE TokenType = "CHOICE" // Choice keyword, used to define a choice in the script
 	END    TokenType = "END"    // End keyword, used to indicate the end of a script or block
+
+	// Variable and logic keywords
+	LET   TokenType = "LET"   // Let keyword, used to define a variable
+	IF    TokenType = "IF"    // If keyword, used for conditional statements
+	ELSE  TokenType = "ELSE"  // Else keyword, used for alternative paths in conditional statements
+	TRUE  TokenType = "TRUE"  // True keyword, used for boolean true values
+	FALSE TokenType = "FALSE" // False keyword, used for boolean false values
 )
 
 var Keywords = map[string]TokenType{
@@ -54,4 +69,9 @@ var Keywords = map[string]TokenType{
 	"LABEL":  LABEL,
 	"CHOICE": CHOICE,
 	"END":    END,
+	"LET":    LET,
+	"IF":     IF,
+	"ELSE":   ELSE,
+	"TRUE":   TRUE,
+	"FALSE":  FALSE,
 }

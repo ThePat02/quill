@@ -51,6 +51,10 @@ func (p *Parser) Parse() (*ast.Program, []ParseError) {
 
 func (p *Parser) parseStatement() (ast.Statement, *ParseError) {
 	switch {
+	case p.check(token.LET):
+		return p.parseLetStatement()
+	case p.check(token.IF):
+		return p.parseIfStatement()
 	case p.check(token.LABEL):
 		return p.parseLabelStatement()
 	case p.check(token.GOTO):
@@ -64,6 +68,8 @@ func (p *Parser) parseStatement() (ast.Statement, *ParseError) {
 	case p.check(token.IDENT):
 		if p.checkNext(token.COLON) {
 			return p.parseDialogStatement()
+		} else if p.checkNext(token.ASSIGN) || p.checkNext(token.PLUS_ASSIGN) || p.checkNext(token.MINUS_ASSIGN) {
+			return p.parseAssignStatement()
 		}
 	}
 
@@ -74,6 +80,118 @@ func (p *Parser) parseStatement() (ast.Statement, *ParseError) {
 		Line:    current.Line,
 		Message: "Unexpected token: " + current.Lexeme,
 	}
+}
+
+func (p *Parser) parseLetStatement() (ast.Statement, *ParseError) {
+	letToken := p.peek()
+	p.advance() // consume LET
+
+	if !p.check(token.IDENT) {
+		return nil, &ParseError{
+			Line:    p.peek().Line,
+			Message: "Expected identifier after LET",
+		}
+	}
+
+	name := &ast.Identifier{
+		Token: p.peek(),
+		Value: p.peek().Lexeme,
+	}
+	p.advance() // consume identifier
+
+	if !p.check(token.ASSIGN) {
+		return nil, &ParseError{
+			Line:    p.peek().Line,
+			Message: "Expected '=' after variable name",
+		}
+	}
+
+	p.advance() // consume '='
+
+	value, err := p.parseExpression()
+	if err != nil {
+		return nil, err
+	}
+
+	return &ast.LetStatement{
+		Token: letToken,
+		Name:  name,
+		Value: value,
+	}, nil
+}
+
+func (p *Parser) parseAssignStatement() (ast.Statement, *ParseError) {
+	name := &ast.Identifier{
+		Token: p.peek(),
+		Value: p.peek().Lexeme,
+	}
+	p.advance() // consume identifier
+
+	operator := p.peek()
+	if !p.check(token.ASSIGN) && !p.check(token.PLUS_ASSIGN) && !p.check(token.MINUS_ASSIGN) {
+		return nil, &ParseError{
+			Line:    p.peek().Line,
+			Message: "Expected assignment operator",
+		}
+	}
+	p.advance() // consume operator
+
+	value, err := p.parseExpression()
+	if err != nil {
+		return nil, err
+	}
+
+	return &ast.AssignStatement{
+		Name:     name,
+		Operator: operator,
+		Value:    value,
+	}, nil
+}
+
+func (p *Parser) parseIfStatement() (ast.Statement, *ParseError) {
+	ifToken := p.peek()
+	p.advance() // consume IF
+
+	condition, err := p.parseExpression()
+	if err != nil {
+		return nil, err
+	}
+
+	if !p.check(token.LBRACE) {
+		return nil, &ParseError{
+			Line:    p.peek().Line,
+			Message: "Expected '{' after IF condition",
+		}
+	}
+
+	consequence, err := p.parseBlockStatement()
+	if err != nil {
+		return nil, err
+	}
+
+	var alternative *ast.BlockStatement
+	if p.check(token.ELSE) {
+		p.advance() // consume ELSE
+
+		if !p.check(token.LBRACE) {
+			return nil, &ParseError{
+				Line:    p.peek().Line,
+				Message: "Expected '{' after ELSE",
+			}
+		}
+
+		alternative, err = p.parseBlockStatement()
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return &ast.IfStatement{
+		Token:       ifToken,
+		Condition:   condition,
+		Consequence: consequence,
+		Alternative: alternative,
+	}, nil
 }
 
 func (p *Parser) parseLabelStatement() (ast.Statement, *ParseError) {
@@ -139,28 +257,27 @@ func (p *Parser) parseDialogStatement() (ast.Statement, *ParseError) {
 	p.advance() // consume character name
 
 	colonToken := p.peek()
-	p.advance() // consume ':'
-
-	if !p.check(token.STRING) {
+	if !p.check(token.COLON) {
 		return nil, &ParseError{
 			Line:    p.peek().Line,
-			Message: "Expected string literal after ':'",
+			Message: "Expected ':' after character name",
 		}
 	}
+	p.advance() // consume ':'
 
-	text := &ast.StringLiteral{
-		Token: p.peek(),
-		Value: p.peek().Literal.(string),
+	// Parse the text as an expression (could be string literal or interpolated string)
+	text, err := p.parseExpression()
+	if err != nil {
+		return nil, err
 	}
-	p.advance() // consume string
 
 	// Parse optional tags
 	var tags *ast.TagList
 	if p.check(token.LBRACKET) {
-		var err *ParseError
-		tags, err = p.parseTagList()
-		if err != nil {
-			return nil, err
+		var tagErr *ParseError
+		tags, tagErr = p.parseTagList()
+		if tagErr != nil {
+			return nil, tagErr
 		}
 	}
 
@@ -423,6 +540,269 @@ func (p *Parser) parseRandomOption() (*ast.RandomOption, *ParseError) {
 		Body: body,
 		Tags: tags,
 	}, nil
+}
+
+// Expression parsing with precedence
+const (
+	_ int = iota
+	LOWEST
+	EQUALS      // ==
+	LESSGREATER // > or <
+	SUM         // +
+	PRODUCT     // *
+	PREFIX      // -X or !X
+	CALL        // myFunction(X)
+)
+
+var precedences = map[token.TokenType]int{
+	token.EQ:    EQUALS,
+	token.NE:    EQUALS,
+	token.LT:    LESSGREATER,
+	token.GT:    LESSGREATER,
+	token.LE:    LESSGREATER,
+	token.GE:    LESSGREATER,
+	token.AND:   LESSGREATER,
+	token.OR:    LESSGREATER,
+	token.PLUS:  SUM,
+	token.MINUS: SUM,
+}
+
+func (p *Parser) parseExpression() (ast.Expression, *ParseError) {
+	return p.parseExpressionWithPrecedence(LOWEST)
+}
+
+func (p *Parser) parseExpressionWithPrecedence(precedence int) (ast.Expression, *ParseError) {
+	// Parse prefix expression
+	left, err := p.parsePrefixExpression()
+	if err != nil {
+		return nil, err
+	}
+
+	// Parse infix expressions
+	for !p.isAtEnd() && precedence < p.peekPrecedence() {
+		left, err = p.parseInfixExpression(left)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return left, nil
+}
+
+func (p *Parser) parsePrefixExpression() (ast.Expression, *ParseError) {
+	switch p.peek().Type {
+	case token.IDENT:
+		return p.parseIdentifier(), nil
+	case token.INT:
+		return p.parseIntegerLiteral()
+	case token.STRING:
+		return p.parseStringLiteral(), nil
+	case token.TRUE, token.FALSE:
+		return p.parseBooleanLiteral(), nil
+	case token.NOT:
+		return p.parseNotExpression()
+	case token.LPAREN:
+		return p.parseGroupedExpression()
+	default:
+		return nil, &ParseError{
+			Line:    p.peek().Line,
+			Message: "No prefix parse function for " + string(p.peek().Type),
+		}
+	}
+}
+
+func (p *Parser) parseInfixExpression(left ast.Expression) (ast.Expression, *ParseError) {
+	operator := p.peek()
+	precedence := p.currentPrecedence()
+	p.advance()
+
+	right, err := p.parseExpressionWithPrecedence(precedence)
+	if err != nil {
+		return nil, err
+	}
+
+	return &ast.InfixExpression{
+		Token:    operator,
+		Left:     left,
+		Operator: operator.Lexeme,
+		Right:    right,
+	}, nil
+}
+
+func (p *Parser) parseIdentifier() ast.Expression {
+	identifier := &ast.Identifier{
+		Token: p.peek(),
+		Value: p.peek().Lexeme,
+	}
+	p.advance()
+	return identifier
+}
+
+func (p *Parser) parseIntegerLiteral() (ast.Expression, *ParseError) {
+	lit := &ast.IntegerLiteral{
+		Token: p.peek(),
+	}
+
+	// Convert string to int64
+	value := int64(0)
+	for _, char := range p.peek().Lexeme {
+		if char < '0' || char > '9' {
+			return nil, &ParseError{
+				Line:    p.peek().Line,
+				Message: "Invalid integer literal",
+			}
+		}
+		value = value*10 + int64(char-'0')
+	}
+
+	lit.Value = value
+	p.advance()
+	return lit, nil
+}
+
+func (p *Parser) parseStringLiteral() ast.Expression {
+	stringToken := p.peek()
+	stringValue := p.peek().Literal.(string)
+
+	// Check if the string contains variable interpolation
+	if p.containsInterpolation(stringValue) {
+		return p.parseInterpolatedString(stringToken, stringValue)
+	}
+
+	// Regular string literal
+	lit := &ast.StringLiteral{
+		Token: stringToken,
+		Value: stringValue,
+	}
+	p.advance()
+	return lit
+}
+
+func (p *Parser) containsInterpolation(str string) bool {
+	for i, char := range str {
+		if char == '{' && i+1 < len(str) {
+			// Look for a closing brace
+			for j := i + 1; j < len(str); j++ {
+				if str[j] == '}' {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+func (p *Parser) parseInterpolatedString(stringToken token.Token, stringValue string) ast.Expression {
+	var parts []ast.Expression
+	current := ""
+
+	for i := 0; i < len(stringValue); i++ {
+		if stringValue[i] == '{' {
+			// Add current string part if not empty
+			if current != "" {
+				parts = append(parts, &ast.StringLiteral{
+					Token: stringToken,
+					Value: current,
+				})
+				current = ""
+			}
+
+			// Find the closing brace
+			j := i + 1
+			for j < len(stringValue) && stringValue[j] != '}' {
+				j++
+			}
+
+			if j < len(stringValue) {
+				// Extract variable name
+				varName := stringValue[i+1 : j]
+				parts = append(parts, &ast.Identifier{
+					Token: token.Token{
+						Type:    token.IDENT,
+						Lexeme:  varName,
+						Literal: nil,
+						Line:    stringToken.Line,
+					},
+					Value: varName,
+				})
+				i = j // Skip past the closing brace
+			}
+		} else {
+			current += string(stringValue[i])
+		}
+	}
+
+	// Add remaining string part
+	if current != "" {
+		parts = append(parts, &ast.StringLiteral{
+			Token: stringToken,
+			Value: current,
+		})
+	}
+
+	p.advance()
+	return &ast.InterpolatedString{
+		Token: stringToken,
+		Parts: parts,
+	}
+}
+
+func (p *Parser) parseBooleanLiteral() ast.Expression {
+	lit := &ast.BooleanLiteral{
+		Token: p.peek(),
+		Value: p.peek().Type == token.TRUE,
+	}
+	p.advance()
+	return lit
+}
+
+func (p *Parser) parseNotExpression() (ast.Expression, *ParseError) {
+	operator := p.peek()
+	p.advance()
+
+	right, err := p.parseExpressionWithPrecedence(PREFIX)
+	if err != nil {
+		return nil, err
+	}
+
+	return &ast.PrefixExpression{
+		Token:    operator,
+		Operator: operator.Lexeme,
+		Right:    right,
+	}, nil
+}
+
+func (p *Parser) parseGroupedExpression() (ast.Expression, *ParseError) {
+	p.advance() // consume '('
+
+	exp, err := p.parseExpression()
+	if err != nil {
+		return nil, err
+	}
+
+	if !p.check(token.RPAREN) {
+		return nil, &ParseError{
+			Line:    p.peek().Line,
+			Message: "Expected ')' after grouped expression",
+		}
+	}
+
+	p.advance() // consume ')'
+	return exp, nil
+}
+
+func (p *Parser) peekPrecedence() int {
+	if p, ok := precedences[p.peek().Type]; ok {
+		return p
+	}
+	return LOWEST
+}
+
+func (p *Parser) currentPrecedence() int {
+	if p, ok := precedences[p.peek().Type]; ok {
+		return p
+	}
+	return LOWEST
 }
 
 // Helper function for error recovery

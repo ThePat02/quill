@@ -1,8 +1,10 @@
 package interpreter
 
 import (
+	"fmt"
 	"math/rand"
 	"quill/internal/ast"
+	"quill/internal/token"
 	"time"
 )
 
@@ -53,6 +55,7 @@ type executionFrame struct {
 type Interpreter struct {
 	program           *ast.Program
 	labels            map[string]*ast.LabelStatement
+	variables         map[string]interface{}
 	state             ExecutionState
 	currentStatements []ast.Statement
 	statementIndex    int
@@ -74,6 +77,7 @@ func New(program *ast.Program) *Interpreter {
 	interpreter := &Interpreter{
 		program:           program,
 		labels:            make(map[string]*ast.LabelStatement),
+		variables:         make(map[string]interface{}),
 		state:             StateReady,
 		currentStatements: program.Statements,
 		statementIndex:    0,
@@ -90,33 +94,31 @@ func New(program *ast.Program) *Interpreter {
 
 func (i *Interpreter) executeStatement(stmt ast.Statement) *InterpreterResult {
 	switch node := stmt.(type) {
+	case *ast.LetStatement:
+		return i.executeLetStatement(node)
+	case *ast.AssignStatement:
+		return i.executeAssignStatement(node)
+	case *ast.IfStatement:
+		return i.executeIfStatement(node)
 	case *ast.LabelStatement:
 		// Labels are just markers, don't do anything special
-		// Let the normal flow continue to the next statement
 		return nil
-
 	case *ast.DialogStatement:
 		return i.executeDialog(node)
-
 	case *ast.ChoiceStatement:
 		return i.executeChoice(node)
-
 	case *ast.RandomStatement:
 		return i.executeRandom(node)
-
 	case *ast.GotoStatement:
 		return i.executeGoto(node)
-
 	case *ast.EndStatement:
 		i.state = StateEnded
 		return &InterpreterResult{
 			Type: EndResult,
 			Data: nil,
 		}
-
 	case *ast.BlockStatement:
 		return i.executeBlock(node)
-
 	default:
 		i.state = StateError
 		return &InterpreterResult{
@@ -129,9 +131,105 @@ func (i *Interpreter) executeStatement(stmt ast.Statement) *InterpreterResult {
 	}
 }
 
+func (i *Interpreter) executeLetStatement(letStmt *ast.LetStatement) *InterpreterResult {
+	value, err := i.evaluateExpression(letStmt.Value)
+	if err != nil {
+		return err
+	}
+
+	i.variables[letStmt.Name.Value] = value
+	return nil // Continue to next statement
+}
+
+func (i *Interpreter) executeAssignStatement(assignStmt *ast.AssignStatement) *InterpreterResult {
+	currentValue, exists := i.variables[assignStmt.Name.Value]
+	if !exists {
+		return &InterpreterResult{
+			Type: ErrorResult,
+			Data: ErrorData{
+				Message: "Variable '" + assignStmt.Name.Value + "' not defined",
+				Line:    assignStmt.Name.Token.Line,
+			},
+		}
+	}
+
+	newValue, err := i.evaluateExpression(assignStmt.Value)
+	if err != nil {
+		return err
+	}
+
+	switch assignStmt.Operator.Type {
+	case token.ASSIGN:
+		i.variables[assignStmt.Name.Value] = newValue
+	case token.PLUS_ASSIGN:
+		if currentInt, ok := currentValue.(int64); ok {
+			if newInt, ok := newValue.(int64); ok {
+				i.variables[assignStmt.Name.Value] = currentInt + newInt
+			} else {
+				return &InterpreterResult{
+					Type: ErrorResult,
+					Data: ErrorData{
+						Message: "Cannot add non-integer to integer",
+						Line:    assignStmt.Operator.Line,
+					},
+				}
+			}
+		}
+	case token.MINUS_ASSIGN:
+		if currentInt, ok := currentValue.(int64); ok {
+			if newInt, ok := newValue.(int64); ok {
+				i.variables[assignStmt.Name.Value] = currentInt - newInt
+			} else {
+				return &InterpreterResult{
+					Type: ErrorResult,
+					Data: ErrorData{
+						Message: "Cannot subtract non-integer from integer",
+						Line:    assignStmt.Operator.Line,
+					},
+				}
+			}
+		}
+	}
+
+	return nil // Continue to next statement
+}
+
+func (i *Interpreter) executeIfStatement(ifStmt *ast.IfStatement) *InterpreterResult {
+	condition, err := i.evaluateExpression(ifStmt.Condition)
+	if err != nil {
+		return err
+	}
+
+	conditionBool, ok := condition.(bool)
+	if !ok {
+		return &InterpreterResult{
+			Type: ErrorResult,
+			Data: ErrorData{
+				Message: "IF condition must be a boolean",
+				Line:    ifStmt.Token.Line,
+			},
+		}
+	}
+
+	if conditionBool {
+		return i.executeBlock(ifStmt.Consequence)
+	} else if ifStmt.Alternative != nil {
+		return i.executeBlock(ifStmt.Alternative)
+	}
+
+	return nil // Continue to next statement
+}
+
 func (i *Interpreter) executeDialog(dialog *ast.DialogStatement) *InterpreterResult {
 	character := dialog.Character.Value
-	text := dialog.Text.Value
+
+	// Evaluate the text expression (handles both StringLiteral and InterpolatedString)
+	textResult, err := i.evaluateExpression(dialog.Text)
+	if err != nil {
+		return err
+	}
+
+	text := textResult.(string)
 
 	// Extract tags if present
 	var tags []string
@@ -157,8 +255,16 @@ func (i *Interpreter) executeChoice(choice *ast.ChoiceStatement) *InterpreterRes
 
 	for idx, option := range choice.Options {
 		text := ""
+
+		// Handle both regular strings and interpolated strings
 		if stringLit, ok := option.Text.(*ast.StringLiteral); ok {
-			text = stringLit.Value
+			text = i.interpolateString(stringLit.Value)
+		} else if interpolated, ok := option.Text.(*ast.InterpolatedString); ok {
+			result, err := i.evaluateExpression(interpolated)
+			if err != nil {
+				return err
+			}
+			text = result.(string)
 		}
 
 		var tags []string
@@ -420,4 +526,212 @@ func (i *Interpreter) IsEnded() bool {
 
 func (i *Interpreter) IsWaitingForChoice() bool {
 	return i.state == StateWaitingForChoice
+}
+
+func (i *Interpreter) evaluateExpression(expr ast.Expression) (interface{}, *InterpreterResult) {
+	switch node := expr.(type) {
+	case *ast.Identifier:
+		value, exists := i.variables[node.Value]
+		if !exists {
+			return nil, &InterpreterResult{
+				Type: ErrorResult,
+				Data: ErrorData{
+					Message: "Variable '" + node.Value + "' not defined",
+					Line:    node.Token.Line,
+				},
+			}
+		}
+		return value, nil
+
+	case *ast.IntegerLiteral:
+		return node.Value, nil
+
+	case *ast.BooleanLiteral:
+		return node.Value, nil
+
+	case *ast.StringLiteral:
+		return node.Value, nil
+
+	case *ast.InterpolatedString:
+		result := ""
+		for _, part := range node.Parts {
+			if ident, ok := part.(*ast.Identifier); ok {
+				// Variable interpolation
+				value, exists := i.variables[ident.Value]
+				if !exists {
+					return nil, &InterpreterResult{
+						Type: ErrorResult,
+						Data: ErrorData{
+							Message: "Variable '" + ident.Value + "' not defined",
+							Line:    ident.Token.Line,
+						},
+					}
+				}
+				result += i.valueToString(value)
+			} else if str, ok := part.(*ast.StringLiteral); ok {
+				// String literal part
+				result += str.Value
+			}
+		}
+		return result, nil
+
+	case *ast.InfixExpression:
+		return i.evaluateInfixExpression(node)
+
+	case *ast.PrefixExpression:
+		return i.evaluatePrefixExpression(node)
+
+	default:
+		return nil, &InterpreterResult{
+			Type: ErrorResult,
+			Data: ErrorData{
+				Message: "Unknown expression type",
+				Line:    0,
+			},
+		}
+	}
+}
+
+func (i *Interpreter) evaluateInfixExpression(expr *ast.InfixExpression) (interface{}, *InterpreterResult) {
+	left, err := i.evaluateExpression(expr.Left)
+	if err != nil {
+		return nil, err
+	}
+
+	right, err := i.evaluateExpression(expr.Right)
+	if err != nil {
+		return nil, err
+	}
+
+	switch expr.Operator {
+	case "==":
+		return left == right, nil
+	case "!=":
+		return left != right, nil
+	case "+":
+		if leftInt, ok := left.(int64); ok {
+			if rightInt, ok := right.(int64); ok {
+				return leftInt + rightInt, nil
+			}
+		}
+	case "-":
+		if leftInt, ok := left.(int64); ok {
+			if rightInt, ok := right.(int64); ok {
+				return leftInt - rightInt, nil
+			}
+		}
+	case ">":
+		if leftInt, ok := left.(int64); ok {
+			if rightInt, ok := right.(int64); ok {
+				return leftInt > rightInt, nil
+			}
+		}
+	case "<":
+		if leftInt, ok := left.(int64); ok {
+			if rightInt, ok := right.(int64); ok {
+				return leftInt < rightInt, nil
+			}
+		}
+	case ">=":
+		if leftInt, ok := left.(int64); ok {
+			if rightInt, ok := right.(int64); ok {
+				return leftInt >= rightInt, nil
+			}
+		}
+	case "<=":
+		if leftInt, ok := left.(int64); ok {
+			if rightInt, ok := right.(int64); ok {
+				return leftInt <= rightInt, nil
+			}
+		}
+	case "&&":
+		if leftBool, ok := left.(bool); ok {
+			if rightBool, ok := right.(bool); ok {
+				return leftBool && rightBool, nil
+			}
+		}
+	case "||":
+		if leftBool, ok := left.(bool); ok {
+			if rightBool, ok := right.(bool); ok {
+				return leftBool || rightBool, nil
+			}
+		}
+	}
+
+	return nil, &InterpreterResult{
+		Type: ErrorResult,
+		Data: ErrorData{
+			Message: "Invalid operation: " + expr.Operator,
+			Line:    expr.Token.Line,
+		},
+	}
+}
+
+func (i *Interpreter) evaluatePrefixExpression(expr *ast.PrefixExpression) (interface{}, *InterpreterResult) {
+	right, err := i.evaluateExpression(expr.Right)
+	if err != nil {
+		return nil, err
+	}
+
+	switch expr.Operator {
+	case "!":
+		if rightBool, ok := right.(bool); ok {
+			return !rightBool, nil
+		}
+	}
+
+	return nil, &InterpreterResult{
+		Type: ErrorResult,
+		Data: ErrorData{
+			Message: "Invalid prefix operation: " + expr.Operator,
+			Line:    expr.Token.Line,
+		},
+	}
+}
+
+func (i *Interpreter) valueToString(value interface{}) string {
+	switch v := value.(type) {
+	case string:
+		return v
+	case int64:
+		return fmt.Sprintf("%d", v)
+	case bool:
+		if v {
+			return "TRUE"
+		}
+		return "FALSE"
+	default:
+		return fmt.Sprintf("%v", v)
+	}
+}
+
+func (interp *Interpreter) interpolateString(text string) string {
+	result := ""
+	for i := 0; i < len(text); i++ {
+		if text[i] == '{' {
+			// Find the closing brace
+			j := i + 1
+			for j < len(text) && text[j] != '}' {
+				j++
+			}
+
+			if j < len(text) {
+				// Extract variable name and substitute
+				varName := text[i+1 : j]
+				if value, exists := interp.variables[varName]; exists {
+					result += interp.valueToString(value)
+				} else {
+					// Variable not found, keep the original text
+					result += "{" + varName + "}"
+				}
+				i = j // Skip past the closing brace
+			} else {
+				// No closing brace found, add the character as-is
+				result += string(text[i])
+			}
+		} else {
+			result += string(text[i])
+		}
+	}
+	return result
 }

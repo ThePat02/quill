@@ -74,19 +74,57 @@ func (scanner *Scanner) scanToken() *ScannerError {
 	case ']':
 		scanner.addToken(token.RBRACKET)
 	case '=':
-		scanner.addToken(token.ASSIGN)
+		if scanner.peek() == '=' {
+			scanner.advance()
+			scanner.addToken(token.EQ)
+		} else {
+			scanner.addToken(token.ASSIGN)
+		}
 	case '+':
-		scanner.addToken(token.PLUS)
-	case '*':
-		scanner.addToken(token.STAR)
+		if scanner.peek() == '=' {
+			scanner.advance()
+			scanner.addToken(token.PLUS_ASSIGN)
+		} else {
+			scanner.addToken(token.PLUS)
+		}
+	case '-':
+		if scanner.peek() == '=' {
+			scanner.advance()
+			scanner.addToken(token.MINUS_ASSIGN)
+		} else {
+			scanner.addToken(token.MINUS)
+		}
 	case '>':
-		scanner.addToken(token.GT)
+		if scanner.peek() == '=' {
+			scanner.advance()
+			scanner.addToken(token.GE)
+		} else {
+			scanner.addToken(token.GT)
+		}
 	case '<':
-		scanner.addToken(token.LT)
-	case '?':
-		scanner.addToken(token.QUESTION)
+		if scanner.peek() == '=' {
+			scanner.advance()
+			scanner.addToken(token.LE)
+		} else {
+			scanner.addToken(token.LT)
+		}
 	case '!':
-		scanner.addToken(token.EXLAM)
+		if scanner.peek() == '=' {
+			scanner.advance()
+			scanner.addToken(token.NE)
+		} else {
+			scanner.addToken(token.NOT)
+		}
+	case '&':
+		if scanner.peek() == '&' {
+			scanner.advance()
+			scanner.addToken(token.AND)
+		}
+	case '|':
+		if scanner.peek() == '|' {
+			scanner.advance()
+			scanner.addToken(token.OR)
+		}
 
 	// Literals
 	case '"':
@@ -101,13 +139,6 @@ func (scanner *Scanner) scanToken() *ScannerError {
 			scanner.advance()
 		}
 		scanner.addToken(token.COMMENT)
-	case '-':
-		if scanner.peek() == '>' {
-			scanner.advance()
-			scanner.addToken(token.ARROW)
-			return nil
-		}
-		scanner.addToken(token.MINUS)
 
 	// Default
 	default:
