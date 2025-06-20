@@ -51,7 +51,7 @@ func (es *EndStatement) String() string {
 type DialogStatement struct {
 	Character *Identifier
 	Colon     token.Token
-	Text      *StringLiteral
+	Text      Expression
 	Tags      *TagList
 }
 

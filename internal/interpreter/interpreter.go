@@ -222,7 +222,14 @@ func (i *Interpreter) executeIfStatement(ifStmt *ast.IfStatement) *InterpreterRe
 
 func (i *Interpreter) executeDialog(dialog *ast.DialogStatement) *InterpreterResult {
 	character := dialog.Character.Value
-	text := dialog.Text.Value
+
+	// Evaluate the text expression (handles both StringLiteral and InterpolatedString)
+	textResult, err := i.evaluateExpression(dialog.Text)
+	if err != nil {
+		return err
+	}
+
+	text := textResult.(string)
 
 	// Extract tags if present
 	var tags []string
@@ -248,8 +255,16 @@ func (i *Interpreter) executeChoice(choice *ast.ChoiceStatement) *InterpreterRes
 
 	for idx, option := range choice.Options {
 		text := ""
+
+		// Handle both regular strings and interpolated strings
 		if stringLit, ok := option.Text.(*ast.StringLiteral); ok {
-			text = stringLit.Value
+			text = i.interpolateString(stringLit.Value)
+		} else if interpolated, ok := option.Text.(*ast.InterpolatedString); ok {
+			result, err := i.evaluateExpression(interpolated)
+			if err != nil {
+				return err
+			}
+			text = result.(string)
 		}
 
 		var tags []string
@@ -688,4 +703,35 @@ func (i *Interpreter) valueToString(value interface{}) string {
 	default:
 		return fmt.Sprintf("%v", v)
 	}
+}
+
+func (interp *Interpreter) interpolateString(text string) string {
+	result := ""
+	for i := 0; i < len(text); i++ {
+		if text[i] == '{' {
+			// Find the closing brace
+			j := i + 1
+			for j < len(text) && text[j] != '}' {
+				j++
+			}
+
+			if j < len(text) {
+				// Extract variable name and substitute
+				varName := text[i+1 : j]
+				if value, exists := interp.variables[varName]; exists {
+					result += interp.valueToString(value)
+				} else {
+					// Variable not found, keep the original text
+					result += "{" + varName + "}"
+				}
+				i = j // Skip past the closing brace
+			} else {
+				// No closing brace found, add the character as-is
+				result += string(text[i])
+			}
+		} else {
+			result += string(text[i])
+		}
+	}
+	return result
 }

@@ -257,28 +257,27 @@ func (p *Parser) parseDialogStatement() (ast.Statement, *ParseError) {
 	p.advance() // consume character name
 
 	colonToken := p.peek()
-	p.advance() // consume ':'
-
-	if !p.check(token.STRING) {
+	if !p.check(token.COLON) {
 		return nil, &ParseError{
 			Line:    p.peek().Line,
-			Message: "Expected string literal after ':'",
+			Message: "Expected ':' after character name",
 		}
 	}
+	p.advance() // consume ':'
 
-	text := &ast.StringLiteral{
-		Token: p.peek(),
-		Value: p.peek().Literal.(string),
+	// Parse the text as an expression (could be string literal or interpolated string)
+	text, err := p.parseExpression()
+	if err != nil {
+		return nil, err
 	}
-	p.advance() // consume string
 
 	// Parse optional tags
 	var tags *ast.TagList
 	if p.check(token.LBRACKET) {
-		var err *ParseError
-		tags, err = p.parseTagList()
-		if err != nil {
-			return nil, err
+		var tagErr *ParseError
+		tags, tagErr = p.parseTagList()
+		if tagErr != nil {
+			return nil, tagErr
 		}
 	}
 
@@ -662,12 +661,90 @@ func (p *Parser) parseIntegerLiteral() (ast.Expression, *ParseError) {
 }
 
 func (p *Parser) parseStringLiteral() ast.Expression {
+	stringToken := p.peek()
+	stringValue := p.peek().Literal.(string)
+
+	// Check if the string contains variable interpolation
+	if p.containsInterpolation(stringValue) {
+		return p.parseInterpolatedString(stringToken, stringValue)
+	}
+
+	// Regular string literal
 	lit := &ast.StringLiteral{
-		Token: p.peek(),
-		Value: p.peek().Literal.(string),
+		Token: stringToken,
+		Value: stringValue,
 	}
 	p.advance()
 	return lit
+}
+
+func (p *Parser) containsInterpolation(str string) bool {
+	for i, char := range str {
+		if char == '{' && i+1 < len(str) {
+			// Look for a closing brace
+			for j := i + 1; j < len(str); j++ {
+				if str[j] == '}' {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+func (p *Parser) parseInterpolatedString(stringToken token.Token, stringValue string) ast.Expression {
+	var parts []ast.Expression
+	current := ""
+
+	for i := 0; i < len(stringValue); i++ {
+		if stringValue[i] == '{' {
+			// Add current string part if not empty
+			if current != "" {
+				parts = append(parts, &ast.StringLiteral{
+					Token: stringToken,
+					Value: current,
+				})
+				current = ""
+			}
+
+			// Find the closing brace
+			j := i + 1
+			for j < len(stringValue) && stringValue[j] != '}' {
+				j++
+			}
+
+			if j < len(stringValue) {
+				// Extract variable name
+				varName := stringValue[i+1 : j]
+				parts = append(parts, &ast.Identifier{
+					Token: token.Token{
+						Type:    token.IDENT,
+						Lexeme:  varName,
+						Literal: nil,
+						Line:    stringToken.Line,
+					},
+					Value: varName,
+				})
+				i = j // Skip past the closing brace
+			}
+		} else {
+			current += string(stringValue[i])
+		}
+	}
+
+	// Add remaining string part
+	if current != "" {
+		parts = append(parts, &ast.StringLiteral{
+			Token: stringToken,
+			Value: current,
+		})
+	}
+
+	p.advance()
+	return &ast.InterpolatedString{
+		Token: stringToken,
+		Parts: parts,
+	}
 }
 
 func (p *Parser) parseBooleanLiteral() ast.Expression {
