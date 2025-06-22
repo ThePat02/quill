@@ -11,8 +11,8 @@ type Parser struct {
 }
 
 type ParseError struct {
-	Line    int
-	Message string
+	Line    int    `json:"line"`
+	Message string `json:"message"`
 }
 
 func New(tokens []token.Token) *Parser {

@@ -23,19 +23,19 @@ type InterpreterResult struct {
 }
 
 type DialogData struct {
-	Character string
-	Text      string
-	Tags      []string
+	Character string   `json:"character"`
+	Text      string   `json:"text"`
+	Tags      []string `json:"tags"`
 }
 
 type ChoiceOption struct {
-	Index int
-	Text  string
-	Tags  []string
+	Index int      `json:"index"`
+	Text  string   `json:"text"`
+	Tags  []string `json:"tags"`
 }
 
 type ChoiceData struct {
-	Options []ChoiceOption
+	Options []ChoiceOption `json:"options"`
 }
 
 type ExecutionState int
@@ -69,8 +69,8 @@ type InterpreterError struct {
 }
 
 type ErrorData struct {
-	Message string
-	Line    int
+	Message string `json:"message"`
+	Line    int    `json:"line"`
 }
 
 func New(program *ast.Program) *Interpreter {
