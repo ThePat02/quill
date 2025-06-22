@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"quill/internal/jsonapi"
 	"sync"
 	"unsafe"
@@ -18,22 +17,21 @@ var (
 )
 
 //export quill_new_interpreter
-func quill_new_interpreter(source *C.char) *C.char {
+func quill_new_interpreter(source *C.char) C.int {
 	goSource := C.GoString(source)
-	interp, result := jsonapi.NewQuillInterpreter(goSource)
+	interp, _ := jsonapi.NewQuillInterpreter(goSource)
 
-	if interp != nil {
-		mu.Lock()
-		interpreters[nextID] = interp
-		nextID++
-		mu.Unlock()
+	if interp == nil {
+		return -1
 	}
 
-	cResult := C.CString(result)
-	if cResult == nil {
-		return C.CString(`{"success":false,"error":"Failed to allocate C string"}`)
-	}
-	return C.CString((`{"success":true,"interpreter_id":` + fmt.Sprint(nextID-1) + `}`))
+	mu.Lock()
+	id := nextID
+	interpreters[nextID] = interp
+	nextID++
+	mu.Unlock()
+
+	return C.int(id)
 }
 
 //export quill_step
