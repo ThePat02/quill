@@ -1,13 +1,15 @@
 package main
 
-// #include <stdlib.h>
-// #include <stdio.h>
-import "C"
 import (
+	"fmt"
 	"quill/internal/jsonapi"
 	"sync"
 	"unsafe"
 )
+
+// #include <stdlib.h>
+// #include <stdio.h>
+import "C"
 
 var (
 	interpreters = make(map[int]*jsonapi.QuillInterpreter)
@@ -31,7 +33,7 @@ func quill_new_interpreter(source *C.char) *C.char {
 	if cResult == nil {
 		return C.CString(`{"success":false,"error":"Failed to allocate C string"}`)
 	}
-	return cResult
+	return C.CString((`{"success":true,"interpreter_id":` + fmt.Sprint(nextID-1) + `}`))
 }
 
 //export quill_step
