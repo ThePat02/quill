@@ -13,8 +13,8 @@ type Scanner struct {
 }
 
 type ScannerError struct {
-	Line    int
-	Message string
+	Line    int    `json:"line"`
+	Message string `json:"message"`
 }
 
 func New(source string) *Scanner {
