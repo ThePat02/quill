@@ -5,7 +5,6 @@ import (
 	"math/rand"
 	"quill/internal/ast"
 	"quill/internal/token"
-	"time"
 )
 
 type ResultType int
@@ -13,6 +12,7 @@ type ResultType int
 const (
 	DialogResult ResultType = iota
 	ChoiceResult
+	ToolCallResult
 	EndResult
 	ErrorResult
 )
@@ -38,11 +38,17 @@ type ChoiceData struct {
 	Options []ChoiceOption `json:"options"`
 }
 
+type ToolCallData struct {
+	Function  string        `json:"function"`
+	Arguments []interface{} `json:"arguments"`
+}
+
 type ExecutionState int
 
 const (
 	StateReady ExecutionState = iota
 	StateWaitingForChoice
+	StateWaitingForToolCall
 	StateEnded
 	StateError
 )
@@ -60,6 +66,8 @@ type Interpreter struct {
 	currentStatements []ast.Statement
 	statementIndex    int
 	pendingChoice     *ast.ChoiceStatement
+	pendingToolCall   *ast.ToolCall
+	pendingAssignment *ast.Identifier // Variable to assign tool call result to
 	executionStack    []executionFrame
 }
 
@@ -86,8 +94,8 @@ func New(program *ast.Program) *Interpreter {
 
 	interpreter.collectLabels()
 
-	// Seed random number generator
-	rand.Seed(time.Now().UnixNano())
+	// Note: As of Go 1.20, rand.Seed is deprecated and no longer needed
+	// The default source is automatically seeded with a random value
 
 	return interpreter
 }
@@ -132,6 +140,34 @@ func (i *Interpreter) executeStatement(stmt ast.Statement) *InterpreterResult {
 }
 
 func (i *Interpreter) executeLetStatement(letStmt *ast.LetStatement) *InterpreterResult {
+	// Check if the value is a tool call
+	if toolCall, ok := letStmt.Value.(*ast.ToolCall); ok {
+		// Evaluate arguments
+		var args []interface{}
+		for _, arg := range toolCall.Arguments {
+			value, err := i.evaluateExpression(arg)
+			if err != nil {
+				return err
+			}
+			args = append(args, value)
+		}
+
+		// Store context for when we get the response
+		i.pendingToolCall = toolCall
+		i.pendingAssignment = letStmt.Name
+		i.state = StateWaitingForToolCall
+		// Don't decrement statement index - we'll complete this statement when we get the response
+
+		return &InterpreterResult{
+			Type: ToolCallResult,
+			Data: ToolCallData{
+				Function:  toolCall.Function,
+				Arguments: args,
+			},
+		}
+	}
+
+	// Regular expression evaluation
 	value, err := i.evaluateExpression(letStmt.Value)
 	if err != nil {
 		return err
@@ -453,6 +489,16 @@ func (i *Interpreter) Step() *InterpreterResult {
 		}
 	}
 
+	if i.state == StateWaitingForToolCall {
+		return &InterpreterResult{
+			Type: ErrorResult,
+			Data: ErrorData{
+				Message: "Cannot step while waiting for tool call response",
+				Line:    0,
+			},
+		}
+	}
+
 	// Execute next statement
 	if i.statementIndex >= len(i.currentStatements) {
 		// No more statements, check if we can pop from stack
@@ -515,6 +561,31 @@ func (i *Interpreter) HandleChoiceInput(choiceIndex int) *InterpreterResult {
 	return i.executeBlock(selectedOption.Body)
 }
 
+func (i *Interpreter) HandleToolCallResponse(result interface{}) *InterpreterResult {
+	if i.state != StateWaitingForToolCall || i.pendingToolCall == nil {
+		return &InterpreterResult{
+			Type: ErrorResult,
+			Data: ErrorData{
+				Message: "Not waiting for tool call response",
+				Line:    0,
+			},
+		}
+	}
+
+	// Store the result in the pending assignment variable
+	if i.pendingAssignment != nil {
+		i.variables[i.pendingAssignment.Value] = result
+	}
+
+	// Clear pending state
+	i.pendingToolCall = nil
+	i.pendingAssignment = nil
+	i.state = StateReady
+
+	// Return nil to indicate the LET statement is now complete and execution should continue
+	return nil
+}
+
 // Helper methods for external use
 func (i *Interpreter) GetState() ExecutionState {
 	return i.state
@@ -526,6 +597,10 @@ func (i *Interpreter) IsEnded() bool {
 
 func (i *Interpreter) IsWaitingForChoice() bool {
 	return i.state == StateWaitingForChoice
+}
+
+func (i *Interpreter) IsWaitingForToolCall() bool {
+	return i.state == StateWaitingForToolCall
 }
 
 func (i *Interpreter) evaluateExpression(expr ast.Expression) (interface{}, *InterpreterResult) {
@@ -573,7 +648,7 @@ func (i *Interpreter) evaluateExpression(expr ast.Expression) (interface{}, *Int
 				result += str.Value
 			} else if toolCall, ok := part.(*ast.ToolCall); ok {
 				// Tool call interpolation
-				toolResult, err := i.evaluateToolCall(toolCall)
+				toolResult, err := i.executeToolCallImmediate(toolCall)
 				if err != nil {
 					return nil, err
 				}
@@ -589,7 +664,9 @@ func (i *Interpreter) evaluateExpression(expr ast.Expression) (interface{}, *Int
 		return i.evaluatePrefixExpression(node)
 
 	case *ast.ToolCall:
-		return i.evaluateToolCall(node)
+		// For tool calls in expressions (like interpolated strings), we need immediate execution
+		// Only LET statements pause for tool calls
+		return i.executeToolCallImmediate(node)
 
 	default:
 		return nil, &InterpreterResult{
@@ -770,7 +847,7 @@ func (interp *Interpreter) interpolateString(text string) string {
 	return result
 }
 
-func (i *Interpreter) evaluateToolCall(toolCall *ast.ToolCall) (interface{}, *InterpreterResult) {
+func (i *Interpreter) executeToolCallImmediate(toolCall *ast.ToolCall) (interface{}, *InterpreterResult) {
 	// Evaluate all arguments first
 	var args []interface{}
 	for _, arg := range toolCall.Arguments {
@@ -781,10 +858,8 @@ func (i *Interpreter) evaluateToolCall(toolCall *ast.ToolCall) (interface{}, *In
 		args = append(args, value)
 	}
 
-	// For now, we'll implement a simple mock system for tool calls
-	// In a real implementation, this would interface with external systems
+	// Execute immediately with mock data
 	result := i.callTool(toolCall.Function, args)
-
 	return result, nil
 }
 

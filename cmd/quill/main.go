@@ -180,6 +180,36 @@ func runInterpreter(interp *interpreter.Interpreter) {
 				break
 			}
 
+		case interpreter.ToolCallResult:
+			data := result.Data.(interpreter.ToolCallData)
+			fmt.Printf("\n--- Tool Call: %s ---\n", data.Function)
+			fmt.Printf("Arguments: %v\n", data.Arguments)
+
+			// Mock the external system response
+			mockResult := mockToolCall(data.Function, data.Arguments)
+			fmt.Printf("Mock result: %v\n", mockResult)
+
+			// Send the result back to the interpreter
+			toolResult := interp.HandleToolCallResponse(mockResult)
+			if toolResult != nil {
+				if toolResult.Type == interpreter.ErrorResult {
+					errorData := toolResult.Data.(interpreter.ErrorData)
+					fmt.Fprintf(os.Stderr, "Error: %s\n", errorData.Message)
+					return
+				}
+
+				// Handle other result types if needed
+				if toolResult.Type == interpreter.DialogResult {
+					dialogData := toolResult.Data.(interpreter.DialogData)
+					fmt.Printf("%s: %s", dialogData.Character, dialogData.Text)
+					if len(dialogData.Tags) > 0 {
+						fmt.Printf(" [%s]", strings.Join(dialogData.Tags, ", "))
+					}
+					fmt.Println()
+				}
+			}
+			// If toolResult is nil, the LET statement completed and execution will continue in next loop iteration
+
 		case interpreter.EndResult:
 			fmt.Println("\n--- End of script ---")
 			return
@@ -193,5 +223,62 @@ func runInterpreter(interp *interpreter.Interpreter) {
 			fmt.Fprintf(os.Stderr, "Unknown result type: %d\n", result.Type)
 			return
 		}
+	}
+}
+
+func mockToolCall(functionName string, args []interface{}) interface{} {
+	// Mock implementation of tool calls for testing
+	switch functionName {
+	case "getPlayerName":
+		return "Player"
+
+	case "getPlayerAge":
+		return int64(25)
+
+	case "getData":
+		if len(args) > 0 {
+			key := fmt.Sprintf("%v", args[0])
+			switch key {
+			case "gold":
+				return int64(100)
+			case "health":
+				return int64(80)
+			default:
+				return "Unknown"
+			}
+		}
+		return "No data"
+
+	case "getItemPrice":
+		if len(args) >= 2 {
+			itemType := fmt.Sprintf("%v", args[0])
+			level := int64(1)
+			if levelArg, ok := args[1].(int64); ok {
+				level = levelArg
+			}
+
+			basePrice := int64(10)
+			if itemType == "potion" {
+				basePrice = 5
+			} else if itemType == "weapon" {
+				basePrice = 50
+			} else if itemType == "armor" {
+				basePrice = 30
+			}
+
+			return basePrice * level
+		}
+		return int64(0)
+
+	case "agePlusFive":
+		if len(args) > 0 {
+			if age, ok := args[0].(int64); ok {
+				return age + 5
+			}
+		}
+		return int64(5)
+
+	default:
+		return "Unknown function: " + functionName
 	}
 }
