@@ -8,7 +8,7 @@ RANDOM {
     { SHOPKEEP: "Greetings! What brings you to my shop today?" }
 }
 
-SYSTEM: "You enter {shop_name}!"
+SYSTEM: "You enter {shop_name} and have {wallet} coins in your wallet."
 
 LABEL shop
 SYSTEM: "Wallet: {wallet} coins"
