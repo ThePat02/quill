@@ -5,7 +5,6 @@ import (
 	"math/rand"
 	"quill/internal/ast"
 	"quill/internal/token"
-	"time"
 )
 
 type ResultType int
@@ -13,6 +12,7 @@ type ResultType int
 const (
 	DialogResult ResultType = iota
 	ChoiceResult
+	ToolCallResult
 	EndResult
 	ErrorResult
 )
@@ -38,11 +38,17 @@ type ChoiceData struct {
 	Options []ChoiceOption `json:"options"`
 }
 
+type ToolCallData struct {
+	Function  string        `json:"function"`
+	Arguments []interface{} `json:"arguments"`
+}
+
 type ExecutionState int
 
 const (
 	StateReady ExecutionState = iota
 	StateWaitingForChoice
+	StateWaitingForToolCall
 	StateEnded
 	StateError
 )
@@ -60,6 +66,8 @@ type Interpreter struct {
 	currentStatements []ast.Statement
 	statementIndex    int
 	pendingChoice     *ast.ChoiceStatement
+	pendingToolCall   *ast.ToolCall
+	pendingAssignment *ast.Identifier // Variable to assign tool call result to
 	executionStack    []executionFrame
 }
 
@@ -86,8 +94,8 @@ func New(program *ast.Program) *Interpreter {
 
 	interpreter.collectLabels()
 
-	// Seed random number generator
-	rand.Seed(time.Now().UnixNano())
+	// Note: As of Go 1.20, rand.Seed is deprecated and no longer needed
+	// The default source is automatically seeded with a random value
 
 	return interpreter
 }
@@ -132,6 +140,34 @@ func (i *Interpreter) executeStatement(stmt ast.Statement) *InterpreterResult {
 }
 
 func (i *Interpreter) executeLetStatement(letStmt *ast.LetStatement) *InterpreterResult {
+	// Check if the value is a tool call
+	if toolCall, ok := letStmt.Value.(*ast.ToolCall); ok {
+		// Evaluate arguments
+		var args []interface{}
+		for _, arg := range toolCall.Arguments {
+			value, err := i.evaluateExpression(arg)
+			if err != nil {
+				return err
+			}
+			args = append(args, value)
+		}
+
+		// Store context for when we get the response
+		i.pendingToolCall = toolCall
+		i.pendingAssignment = letStmt.Name
+		i.state = StateWaitingForToolCall
+		// Don't decrement statement index - we'll complete this statement when we get the response
+
+		return &InterpreterResult{
+			Type: ToolCallResult,
+			Data: ToolCallData{
+				Function:  toolCall.Function,
+				Arguments: args,
+			},
+		}
+	}
+
+	// Regular expression evaluation
 	value, err := i.evaluateExpression(letStmt.Value)
 	if err != nil {
 		return err
@@ -453,6 +489,16 @@ func (i *Interpreter) Step() *InterpreterResult {
 		}
 	}
 
+	if i.state == StateWaitingForToolCall {
+		return &InterpreterResult{
+			Type: ErrorResult,
+			Data: ErrorData{
+				Message: "Cannot step while waiting for tool call response",
+				Line:    0,
+			},
+		}
+	}
+
 	// Execute next statement
 	if i.statementIndex >= len(i.currentStatements) {
 		// No more statements, check if we can pop from stack
@@ -515,6 +561,31 @@ func (i *Interpreter) HandleChoiceInput(choiceIndex int) *InterpreterResult {
 	return i.executeBlock(selectedOption.Body)
 }
 
+func (i *Interpreter) HandleToolCallResponse(result interface{}) *InterpreterResult {
+	if i.state != StateWaitingForToolCall || i.pendingToolCall == nil {
+		return &InterpreterResult{
+			Type: ErrorResult,
+			Data: ErrorData{
+				Message: "Not waiting for tool call response",
+				Line:    0,
+			},
+		}
+	}
+
+	// Store the result in the pending assignment variable
+	if i.pendingAssignment != nil {
+		i.variables[i.pendingAssignment.Value] = result
+	}
+
+	// Clear pending state
+	i.pendingToolCall = nil
+	i.pendingAssignment = nil
+	i.state = StateReady
+
+	// Return nil to indicate the LET statement is now complete and execution should continue
+	return nil
+}
+
 // Helper methods for external use
 func (i *Interpreter) GetState() ExecutionState {
 	return i.state
@@ -526,6 +597,10 @@ func (i *Interpreter) IsEnded() bool {
 
 func (i *Interpreter) IsWaitingForChoice() bool {
 	return i.state == StateWaitingForChoice
+}
+
+func (i *Interpreter) IsWaitingForToolCall() bool {
+	return i.state == StateWaitingForToolCall
 }
 
 func (i *Interpreter) evaluateExpression(expr ast.Expression) (interface{}, *InterpreterResult) {
@@ -571,6 +646,13 @@ func (i *Interpreter) evaluateExpression(expr ast.Expression) (interface{}, *Int
 			} else if str, ok := part.(*ast.StringLiteral); ok {
 				// String literal part
 				result += str.Value
+			} else if toolCall, ok := part.(*ast.ToolCall); ok {
+				// Tool call interpolation
+				toolResult, err := i.executeToolCallImmediate(toolCall)
+				if err != nil {
+					return nil, err
+				}
+				result += i.valueToString(toolResult)
 			}
 		}
 		return result, nil
@@ -580,6 +662,11 @@ func (i *Interpreter) evaluateExpression(expr ast.Expression) (interface{}, *Int
 
 	case *ast.PrefixExpression:
 		return i.evaluatePrefixExpression(node)
+
+	case *ast.ToolCall:
+		// For tool calls in expressions (like interpolated strings), we need immediate execution
+		// Only LET statements pause for tool calls
+		return i.executeToolCallImmediate(node)
 
 	default:
 		return nil, &InterpreterResult{
@@ -593,6 +680,30 @@ func (i *Interpreter) evaluateExpression(expr ast.Expression) (interface{}, *Int
 }
 
 func (i *Interpreter) evaluateInfixExpression(expr *ast.InfixExpression) (interface{}, *InterpreterResult) {
+	// Special handling for null coalescing operator
+	if expr.Operator == "??" {
+		left, err := i.evaluateExpression(expr.Left)
+		if err != nil {
+			// If left side fails, evaluate right side
+			right, err2 := i.evaluateExpression(expr.Right)
+			if err2 != nil {
+				return nil, err // Return the original left error
+			}
+			return right, nil
+		}
+
+		// Check if left value is "falsy" (nil, false, 0, empty string)
+		if i.isFalsy(left) {
+			right, err := i.evaluateExpression(expr.Right)
+			if err != nil {
+				return nil, err
+			}
+			return right, nil
+		}
+
+		return left, nil
+	}
+
 	left, err := i.evaluateExpression(expr.Left)
 	if err != nil {
 		return nil, err
@@ -734,4 +845,101 @@ func (interp *Interpreter) interpolateString(text string) string {
 		}
 	}
 	return result
+}
+
+func (i *Interpreter) executeToolCallImmediate(toolCall *ast.ToolCall) (interface{}, *InterpreterResult) {
+	// Evaluate all arguments first
+	var args []interface{}
+	for _, arg := range toolCall.Arguments {
+		value, err := i.evaluateExpression(arg)
+		if err != nil {
+			return nil, err
+		}
+		args = append(args, value)
+	}
+
+	// Execute immediately with mock data
+	result := i.callTool(toolCall.Function, args)
+	return result, nil
+}
+
+func (i *Interpreter) callTool(functionName string, args []interface{}) interface{} {
+	// Mock implementation of tool calls
+	// In a real system, this would interface with external APIs, databases, etc.
+
+	switch functionName {
+	case "getPlayerName":
+		// Return a default player name or from some external system
+		return "Player"
+
+	case "getPlayerAge":
+		// Return a default age or from some external system
+		return int64(25)
+
+	case "getData":
+		// Simulate getting data based on the first argument
+		if len(args) > 0 {
+			key := i.valueToString(args[0])
+			switch key {
+			case "gold":
+				return int64(100)
+			case "health":
+				return int64(80)
+			default:
+				return "Unknown"
+			}
+		}
+		return "No data"
+
+	case "getItemPrice":
+		// Simulate getting item price based on item type and level
+		if len(args) >= 2 {
+			itemType := i.valueToString(args[0])
+			level, ok := args[1].(int64)
+			if !ok {
+				level = 1
+			}
+
+			// Simple price calculation: base price * level
+			basePrice := int64(10)
+			if itemType == "potion" {
+				basePrice = 5
+			} else if itemType == "weapon" {
+				basePrice = 50
+			} else if itemType == "armor" {
+				basePrice = 30
+			}
+
+			return basePrice * level
+		}
+		return int64(0)
+
+	case "agePlusFive":
+		// Add 5 to the age argument
+		if len(args) > 0 {
+			if age, ok := args[0].(int64); ok {
+				return age + 5
+			}
+		}
+		return int64(5)
+
+	default:
+		// Unknown function, return a placeholder
+		return "Unknown function: " + functionName
+	}
+}
+
+func (i *Interpreter) isFalsy(value interface{}) bool {
+	switch v := value.(type) {
+	case nil:
+		return true
+	case bool:
+		return !v
+	case int64:
+		return v == 0
+	case string:
+		return v == ""
+	default:
+		return false
+	}
 }
