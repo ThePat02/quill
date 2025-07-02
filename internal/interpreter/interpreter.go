@@ -571,6 +571,13 @@ func (i *Interpreter) evaluateExpression(expr ast.Expression) (interface{}, *Int
 			} else if str, ok := part.(*ast.StringLiteral); ok {
 				// String literal part
 				result += str.Value
+			} else if toolCall, ok := part.(*ast.ToolCall); ok {
+				// Tool call interpolation
+				toolResult, err := i.evaluateToolCall(toolCall)
+				if err != nil {
+					return nil, err
+				}
+				result += i.valueToString(toolResult)
 			}
 		}
 		return result, nil
@@ -580,6 +587,9 @@ func (i *Interpreter) evaluateExpression(expr ast.Expression) (interface{}, *Int
 
 	case *ast.PrefixExpression:
 		return i.evaluatePrefixExpression(node)
+
+	case *ast.ToolCall:
+		return i.evaluateToolCall(node)
 
 	default:
 		return nil, &InterpreterResult{
@@ -593,6 +603,30 @@ func (i *Interpreter) evaluateExpression(expr ast.Expression) (interface{}, *Int
 }
 
 func (i *Interpreter) evaluateInfixExpression(expr *ast.InfixExpression) (interface{}, *InterpreterResult) {
+	// Special handling for null coalescing operator
+	if expr.Operator == "??" {
+		left, err := i.evaluateExpression(expr.Left)
+		if err != nil {
+			// If left side fails, evaluate right side
+			right, err2 := i.evaluateExpression(expr.Right)
+			if err2 != nil {
+				return nil, err // Return the original left error
+			}
+			return right, nil
+		}
+
+		// Check if left value is "falsy" (nil, false, 0, empty string)
+		if i.isFalsy(left) {
+			right, err := i.evaluateExpression(expr.Right)
+			if err != nil {
+				return nil, err
+			}
+			return right, nil
+		}
+
+		return left, nil
+	}
+
 	left, err := i.evaluateExpression(expr.Left)
 	if err != nil {
 		return nil, err
@@ -734,4 +768,103 @@ func (interp *Interpreter) interpolateString(text string) string {
 		}
 	}
 	return result
+}
+
+func (i *Interpreter) evaluateToolCall(toolCall *ast.ToolCall) (interface{}, *InterpreterResult) {
+	// Evaluate all arguments first
+	var args []interface{}
+	for _, arg := range toolCall.Arguments {
+		value, err := i.evaluateExpression(arg)
+		if err != nil {
+			return nil, err
+		}
+		args = append(args, value)
+	}
+
+	// For now, we'll implement a simple mock system for tool calls
+	// In a real implementation, this would interface with external systems
+	result := i.callTool(toolCall.Function, args)
+
+	return result, nil
+}
+
+func (i *Interpreter) callTool(functionName string, args []interface{}) interface{} {
+	// Mock implementation of tool calls
+	// In a real system, this would interface with external APIs, databases, etc.
+
+	switch functionName {
+	case "getPlayerName":
+		// Return a default player name or from some external system
+		return "Player"
+
+	case "getPlayerAge":
+		// Return a default age or from some external system
+		return int64(25)
+
+	case "getData":
+		// Simulate getting data based on the first argument
+		if len(args) > 0 {
+			key := i.valueToString(args[0])
+			switch key {
+			case "gold":
+				return int64(100)
+			case "health":
+				return int64(80)
+			default:
+				return "Unknown"
+			}
+		}
+		return "No data"
+
+	case "getItemPrice":
+		// Simulate getting item price based on item type and level
+		if len(args) >= 2 {
+			itemType := i.valueToString(args[0])
+			level, ok := args[1].(int64)
+			if !ok {
+				level = 1
+			}
+
+			// Simple price calculation: base price * level
+			basePrice := int64(10)
+			if itemType == "potion" {
+				basePrice = 5
+			} else if itemType == "weapon" {
+				basePrice = 50
+			} else if itemType == "armor" {
+				basePrice = 30
+			}
+
+			return basePrice * level
+		}
+		return int64(0)
+
+	case "agePlusFive":
+		// Add 5 to the age argument
+		if len(args) > 0 {
+			if age, ok := args[0].(int64); ok {
+				return age + 5
+			}
+		}
+		return int64(5)
+
+	default:
+		// Unknown function, return a placeholder
+		return "Unknown function: " + functionName
+	}
+}
+
+func (i *Interpreter) isFalsy(value interface{}) bool {
+	switch v := value.(type) {
+	case nil:
+		return true
+	case bool:
+		return !v
+	case int64:
+		return v == 0
+	case string:
+		return v == ""
+	default:
+		return false
+	}
 }

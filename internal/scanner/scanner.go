@@ -105,6 +105,12 @@ func (scanner *Scanner) scanToken() *ScannerError {
 		if scanner.peek() == '=' {
 			scanner.advance()
 			scanner.addToken(token.LE)
+		} else if scanner.isAlpha(scanner.peek()) {
+			// This is a tool call starting with <function
+			err := scanner.scanToolCall()
+			if err != nil {
+				return err
+			}
 		} else {
 			scanner.addToken(token.LT)
 		}
@@ -124,6 +130,13 @@ func (scanner *Scanner) scanToken() *ScannerError {
 		if scanner.peek() == '|' {
 			scanner.advance()
 			scanner.addToken(token.OR)
+		}
+	case '?':
+		if scanner.peek() == '?' {
+			scanner.advance()
+			scanner.addToken(token.NULL_COALESCE)
+		} else {
+			scanner.addToken(token.QUESTION)
 		}
 
 	// Literals

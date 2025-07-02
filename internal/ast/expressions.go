@@ -153,3 +153,31 @@ func (is *InterpolatedString) String() string {
 	result += "\""
 	return result
 }
+
+// Tool Call Expression (for <function; arg1, arg2>)
+type ToolCall struct {
+	Token     token.Token  // the '<' token
+	Function  string       // function name
+	Arguments []Expression // arguments to the function
+}
+
+func (tc *ToolCall) expressionNode() {}
+func (tc *ToolCall) String() string {
+	if tc == nil {
+		return "<nil ToolCall>"
+	}
+	result := "<" + tc.Function
+	if len(tc.Arguments) > 0 {
+		result += ";"
+		for i, arg := range tc.Arguments {
+			if i > 0 {
+				result += ", "
+			}
+			if arg != nil {
+				result += arg.String()
+			}
+		}
+	}
+	result += ">"
+	return result
+}

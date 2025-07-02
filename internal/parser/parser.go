@@ -3,6 +3,7 @@ package parser
 import (
 	"quill/internal/ast"
 	"quill/internal/token"
+	"strings"
 )
 
 type Parser struct {
@@ -555,16 +556,17 @@ const (
 )
 
 var precedences = map[token.TokenType]int{
-	token.EQ:    EQUALS,
-	token.NE:    EQUALS,
-	token.LT:    LESSGREATER,
-	token.GT:    LESSGREATER,
-	token.LE:    LESSGREATER,
-	token.GE:    LESSGREATER,
-	token.AND:   LESSGREATER,
-	token.OR:    LESSGREATER,
-	token.PLUS:  SUM,
-	token.MINUS: SUM,
+	token.NULL_COALESCE: LOWEST + 1, // Null coalescing has low precedence
+	token.EQ:            EQUALS,
+	token.NE:            EQUALS,
+	token.LT:            LESSGREATER,
+	token.GT:            LESSGREATER,
+	token.LE:            LESSGREATER,
+	token.GE:            LESSGREATER,
+	token.AND:           LESSGREATER,
+	token.OR:            LESSGREATER,
+	token.PLUS:          SUM,
+	token.MINUS:         SUM,
 }
 
 func (p *Parser) parseExpression() (ast.Expression, *ParseError) {
@@ -603,6 +605,8 @@ func (p *Parser) parsePrefixExpression() (ast.Expression, *ParseError) {
 		return p.parseNotExpression()
 	case token.LPAREN:
 		return p.parseGroupedExpression()
+	case token.TOOL_CALL:
+		return p.parseToolCall()
 	default:
 		return nil, &ParseError{
 			Line:    p.peek().Line,
@@ -688,6 +692,14 @@ func (p *Parser) containsInterpolation(str string) bool {
 				}
 			}
 		}
+		if char == '<' && i+1 < len(str) {
+			// Look for a closing angle bracket (tool call)
+			for j := i + 1; j < len(str); j++ {
+				if str[j] == '>' {
+					return true
+				}
+			}
+		}
 	}
 	return false
 }
@@ -726,6 +738,80 @@ func (p *Parser) parseInterpolatedString(stringToken token.Token, stringValue st
 					Value: varName,
 				})
 				i = j // Skip past the closing brace
+			}
+		} else if stringValue[i] == '<' {
+			// Add current string part if not empty
+			if current != "" {
+				parts = append(parts, &ast.StringLiteral{
+					Token: stringToken,
+					Value: current,
+				})
+				current = ""
+			}
+
+			// Find the closing angle bracket
+			j := i + 1
+			for j < len(stringValue) && stringValue[j] != '>' {
+				j++
+			}
+
+			if j < len(stringValue) {
+				// Extract tool call content including angle brackets
+				toolCallContent := stringValue[i : j+1]
+
+				// Create a mock token for the tool call
+				toolCallToken := token.Token{
+					Type:    token.TOOL_CALL,
+					Lexeme:  toolCallContent,
+					Literal: toolCallContent,
+					Line:    stringToken.Line,
+				}
+
+				// Parse the tool call content
+				inner := toolCallContent[1 : len(toolCallContent)-1] // Remove < and >
+
+				// Split by semicolon to separate function name from arguments
+				colonIndex := strings.Index(inner, ";")
+				functionName := inner
+				var arguments []ast.Expression
+
+				if colonIndex != -1 {
+					functionName = strings.TrimSpace(inner[:colonIndex])
+					argString := strings.TrimSpace(inner[colonIndex+1:])
+
+					if argString != "" {
+						// Split arguments by comma (simple split for now)
+						args := strings.Split(argString, ",")
+						for _, arg := range args {
+							arg = strings.TrimSpace(arg)
+							if arg == "" {
+								continue
+							}
+
+							// Create a simple expression for the argument
+							if arg[0] == '"' && arg[len(arg)-1] == '"' {
+								// String literal
+								arguments = append(arguments, &ast.StringLiteral{
+									Token: toolCallToken,
+									Value: arg[1 : len(arg)-1], // Remove quotes
+								})
+							} else {
+								// Identifier
+								arguments = append(arguments, &ast.Identifier{
+									Token: toolCallToken,
+									Value: arg,
+								})
+							}
+						}
+					}
+				}
+
+				parts = append(parts, &ast.ToolCall{
+					Token:     toolCallToken,
+					Function:  functionName,
+					Arguments: arguments,
+				})
+				i = j // Skip past the closing angle bracket
 			}
 		} else {
 			current += string(stringValue[i])
@@ -821,4 +907,172 @@ func (p *Parser) synchronize() {
 
 		p.advance()
 	}
+}
+
+func (p *Parser) parseToolCall() (ast.Expression, *ParseError) {
+	token := p.peek()
+	content := token.Literal.(string) // Get the full tool call content
+	p.advance()
+
+	// Parse the content inside the angle brackets
+	// Remove < and > from the content
+	if len(content) < 2 || content[0] != '<' || content[len(content)-1] != '>' {
+		return nil, &ParseError{
+			Line:    token.Line,
+			Message: "Invalid tool call format",
+		}
+	}
+
+	inner := content[1 : len(content)-1] // Remove < and >
+
+	// Split by semicolon to separate function name from arguments
+	parts := []string{}
+	current := ""
+	inString := false
+	escaped := false
+
+	for _, char := range inner {
+		if escaped {
+			current += string(char)
+			escaped = false
+			continue
+		}
+
+		if char == '\\' {
+			escaped = true
+			current += string(char)
+			continue
+		}
+
+		if char == '"' {
+			inString = !inString
+			current += string(char)
+			continue
+		}
+
+		if char == ';' && !inString {
+			parts = append(parts, current)
+			current = ""
+			continue
+		}
+
+		current += string(char)
+	}
+
+	if current != "" {
+		parts = append(parts, current)
+	}
+
+	if len(parts) == 0 {
+		return nil, &ParseError{
+			Line:    token.Line,
+			Message: "Tool call must have a function name",
+		}
+	}
+
+	functionName := strings.TrimSpace(parts[0])
+
+	// Parse arguments if they exist
+	var arguments []ast.Expression
+	if len(parts) > 1 {
+		argString := strings.TrimSpace(parts[1])
+		if argString != "" {
+			// Split arguments by comma (but respect string literals)
+			args := []string{}
+			current := ""
+			inString := false
+			escaped := false
+
+			for _, char := range argString {
+				if escaped {
+					current += string(char)
+					escaped = false
+					continue
+				}
+
+				if char == '\\' {
+					escaped = true
+					current += string(char)
+					continue
+				}
+
+				if char == '"' {
+					inString = !inString
+					current += string(char)
+					continue
+				}
+
+				if char == ',' && !inString {
+					args = append(args, strings.TrimSpace(current))
+					current = ""
+					continue
+				}
+
+				current += string(char)
+			}
+
+			if current != "" {
+				args = append(args, strings.TrimSpace(current))
+			}
+
+			// Parse each argument as an expression
+			for _, arg := range args {
+				arg = strings.TrimSpace(arg)
+				if arg == "" {
+					continue
+				}
+
+				// Create a simple parser for the argument
+				if arg[0] == '"' && arg[len(arg)-1] == '"' {
+					// String literal
+					arguments = append(arguments, &ast.StringLiteral{
+						Token: token,
+						Value: arg[1 : len(arg)-1], // Remove quotes
+					})
+				} else if arg == "true" || arg == "false" {
+					// Boolean literal
+					arguments = append(arguments, &ast.BooleanLiteral{
+						Token: token,
+						Value: arg == "true",
+					})
+				} else if isNumber(arg) {
+					// Integer literal
+					value := int64(0)
+					for _, char := range arg {
+						if char >= '0' && char <= '9' {
+							value = value*10 + int64(char-'0')
+						}
+					}
+					arguments = append(arguments, &ast.IntegerLiteral{
+						Token: token,
+						Value: value,
+					})
+				} else {
+					// Identifier
+					arguments = append(arguments, &ast.Identifier{
+						Token: token,
+						Value: arg,
+					})
+				}
+			}
+		}
+	}
+
+	return &ast.ToolCall{
+		Token:     token,
+		Function:  functionName,
+		Arguments: arguments,
+	}, nil
+}
+
+func isNumber(s string) bool {
+	if len(s) == 0 {
+		return false
+	}
+	for _, char := range s {
+		if char < '0' || char > '9' {
+			return false
+		}
+	}
+	return true
 }
