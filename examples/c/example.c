@@ -3,39 +3,61 @@
 #include <string.h>
 #include "libquill.h"
 
-// Simple function to extract interpreter ID from JSON response
-// In a real application, you'd use a proper JSON parser
-int extract_interpreter_id(const char* json_response) {
-    // Look for "success":true first
-    if (strstr(json_response, "\"success\":true") == NULL) {
-        return -1; // Error case
-    }
+// Mock tool call handler that provides realistic responses
+char* get_mock_tool_result(const char* step_result) {
+    // In a real application, you'd parse the JSON to extract function name and arguments
+    // For demo purposes, we'll check for common function names in the JSON
     
-    // This is a very basic extraction - in practice use a JSON library
-    // The response should contain the interpreter ID
-    // For now, we'll return a hardcoded value since the Go code doesn't 
-    // actually include the ID in the response
-    return 1;
+    if (strstr(step_result, "getPlayerName") != NULL) {
+        return "\"Hero\"";
+    } else if (strstr(step_result, "getPlayerAge") != NULL) {
+        return "25";
+    } else if (strstr(step_result, "agePlusFive") != NULL) {
+        return "30";
+    } else if (strstr(step_result, "getData") != NULL) {
+        if (strstr(step_result, "gold") != NULL) {
+            return "150";
+        } else if (strstr(step_result, "health") != NULL) {
+            return "85";
+        } else {
+            return "\"Unknown\"";
+        }
+    } else if (strstr(step_result, "getItemPrice") != NULL) {
+        return "20";
+    } else {
+        return "\"DefaultValue\"";
+    }
 }
 
 int main() {
-    const char* source = 
-        "ALEX: \"Hello there!\"\n"
-        "BELLA: \"Hi Alex!\"\n"
+    char* source = 
+        "# Simple tool call that retrieves the player's name with fallback\n"
+        "LET player_name = <getPlayerName;>\n"
+        "LET player_age = <getPlayerAge;> ?? 18\n"
+        "LET age_plus_five = <agePlusFive; player_age>\n"
         "\n"
-        "CHOICE {\n"
-        "    \"How are you?\" {\n"
-        "        ALEX: \"I'm doing great, thanks!\"\n"
-        "    },\n"
-        "    \"What's new?\" {\n"
-        "        ALEX: \"Not much, just working on some projects.\"\n"
-        "    }\n"
+        "SYSTEM: \"Hello, {player_name}! You are {player_age} years old.\"\n"
+        "IF player_age < 18 {\n"
+        "    SYSTEM: \"You are quite young to be here!\"\n"
         "}\n"
         "\n"
-        "ALEX: \"Thanks for asking!\"\n"
+        "IF player_age >= 18 {\n"
+        "    SYSTEM: \"You are old enough to be here.\"\n"
+        "}\n"
+        "\n"
+        "# Advanced inline tool call. Syntax: <function; argument>\n"
+        "SYSTEM: \"Your current gold balance is <getData; \"gold\"> gold coins.\"\n"
+        "\n"
+        "# Multiple tool calls in a single line\n"
+        "SYSTEM: \"Your current gold balance is <getData; \"gold\"> gold coins and your health is <getData; \"health\">.\"\n"
+        "\n"
+        "# Multiple tool call arguments\n"
+        "# Tool function getItemPrice takes two arguments: item type and item level\n"
+        "LET item_price = <getItemPrice; \"potion\", 4>\n"
+        "SYSTEM: \"The price of a level 4 potion is {item_price} gold coins.\"\n"
         "END\n";
 
-    printf("=== Quill C API Test ===\n\n");
+    printf("=== Quill C API Tool Call Test ===\n\n");
 
     // Test parse only
     printf("1. Testing parse only:\n");
@@ -45,18 +67,12 @@ int main() {
 
     // Create interpreter
     printf("2. Creating interpreter:\n");
-    char* init_result = quill_new_interpreter(source);
-    printf("Init result: %s\n\n", init_result);
-    
-    // Extract interpreter ID from response
-    int interp_id = extract_interpreter_id(init_result);
+    int interp_id = quill_new_interpreter(source);
     if (interp_id == -1) {
         printf("Failed to create interpreter\n");
-        quill_free_string(init_result);
         return 1;
     }
-    
-    quill_free_string(init_result);
+    printf("Created interpreter with ID: %d\n\n", interp_id);
 
     // Test interpreter methods
     printf("3. Testing interpreter methods:\n");
@@ -67,33 +83,59 @@ int main() {
     quill_free_string(state);
 
     // Step through execution
-    for (int i = 0; i < 5; i++) {
+    for (int i = 0; i < 10; i++) {
         printf("\n--- Step %d ---\n", i + 1);
         
         char* step_result = quill_step(interp_id);
         printf("Step result: %s\n", step_result);
-        quill_free_string(step_result);
 
         // Check if waiting for choice
-        char* waiting = quill_is_waiting_for_choice(interp_id);
-        printf("Waiting for choice: %s\n", waiting);
+        char* waiting_choice = quill_is_waiting_for_choice(interp_id);
+        printf("Waiting for choice: %s\n", waiting_choice);
         
-        // For demo purposes, always choose option 0 if waiting
-        // In real usage, you'd parse the JSON to check the boolean value
-        char* choice_result = quill_handle_choice(interp_id, 0);
-        printf("Choice result: %s\n", choice_result);
-        quill_free_string(choice_result);
-        quill_free_string(waiting);
+        // Check if waiting for tool call
+        char* waiting_tool = quill_is_waiting_for_tool_call(interp_id);
+        printf("Waiting for tool call: %s\n", waiting_tool);
+        
+        // Handle choice if needed
+        if (strstr(waiting_choice, "true") != NULL) {
+            printf("Handling choice with option 0...\n");
+            char* choice_result = quill_handle_choice(interp_id, 0);
+            printf("Choice result: %s\n", choice_result);
+            quill_free_string(choice_result);
+        }
+        
+        // Handle tool call if needed
+        if (strstr(waiting_tool, "true") != NULL) {
+            printf("Handling tool call with mock result...\n");
+            char* mock_result = get_mock_tool_result(step_result);
+            printf("Using mock result: %s\n", mock_result);
+            char* tool_result = quill_handle_tool_call_response(interp_id, mock_result);
+            printf("Tool call result: %s\n", tool_result);
+            quill_free_string(tool_result);
+        }
+        
+        quill_free_string(waiting_choice);
+        quill_free_string(waiting_tool);
 
         // Check if ended
         char* ended = quill_is_ended(interp_id);
         printf("Is ended: %s\n", ended);
+        
+        // Break if ended
+        if (strstr(ended, "true") != NULL) {
+            quill_free_string(ended);
+            quill_free_string(step_result);
+            break;
+        }
+        
         quill_free_string(ended);
+        quill_free_string(step_result);
     }
 
     // Clean up
     quill_free_interpreter(interp_id);
     
-    printf("\n=== Test Complete ===\n");
+    printf("\n=== Tool Call Test Complete ===\n");
     return 0;
 }

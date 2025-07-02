@@ -116,6 +116,8 @@ func (qi *QuillInterpreter) GetState() string {
 		stateStr = "ready"
 	case interpreter.StateWaitingForChoice:
 		stateStr = "waiting_for_choice"
+	case interpreter.StateWaitingForToolCall:
+		stateStr = "waiting_for_tool_call"
 	case interpreter.StateEnded:
 		stateStr = "ended"
 	case interpreter.StateError:
@@ -176,6 +178,53 @@ func (qi *QuillInterpreter) IsWaitingForChoice() string {
 	return string(jsonBytes)
 }
 
+// IsWaitingForToolCall returns whether the interpreter is waiting for tool call response as JSON
+func (qi *QuillInterpreter) IsWaitingForToolCall() string {
+	if qi.interpreter == nil {
+		result := JSONResult{
+			Success: false,
+			Error:   "Interpreter not initialized",
+		}
+		jsonBytes, _ := json.Marshal(result)
+		return string(jsonBytes)
+	}
+
+	result := JSONResult{
+		Success: true,
+		Type:    "waiting_for_tool_call_status",
+		Data:    qi.interpreter.IsWaitingForToolCall(),
+	}
+
+	jsonBytes, _ := json.Marshal(result)
+	return string(jsonBytes)
+}
+
+// HandleToolCallResponse handles tool call response and returns JSON
+func (qi *QuillInterpreter) HandleToolCallResponse(result interface{}) string {
+	if qi.interpreter == nil {
+		result := JSONResult{
+			Success: false,
+			Error:   "Interpreter not initialized",
+		}
+		jsonBytes, _ := json.Marshal(result)
+		return string(jsonBytes)
+	}
+
+	interpResult := qi.interpreter.HandleToolCallResponse(result)
+	if interpResult == nil {
+		// Tool call completed successfully, return success without additional data
+		successResult := JSONResult{
+			Success: true,
+			Type:    "tool_call_completed",
+			Data:    nil,
+		}
+		jsonBytes, _ := json.Marshal(successResult)
+		return string(jsonBytes)
+	}
+
+	return qi.convertResultToJSON(interpResult)
+}
+
 // convertResultToJSON converts interpreter results to JSON format
 func (qi *QuillInterpreter) convertResultToJSON(interpResult *interpreter.InterpreterResult) string {
 	if interpResult == nil {
@@ -195,6 +244,8 @@ func (qi *QuillInterpreter) convertResultToJSON(interpResult *interpreter.Interp
 		resultType = "dialog"
 	case interpreter.ChoiceResult:
 		resultType = "choice"
+	case interpreter.ToolCallResult:
+		resultType = "tool_call"
 	case interpreter.EndResult:
 		resultType = "end"
 	case interpreter.ErrorResult:

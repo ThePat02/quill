@@ -124,10 +124,52 @@ func quill_is_waiting_for_choice(interpID C.int) *C.char {
 	return cResult
 }
 
+//export quill_is_waiting_for_tool_call
+func quill_is_waiting_for_tool_call(interpID C.int) *C.char {
+	mu.Lock()
+	interp, exists := interpreters[int(interpID)]
+	mu.Unlock()
+
+	if !exists {
+		return C.CString(`{"success":false,"error":"Invalid interpreter ID"}`)
+	}
+
+	result := interp.IsWaitingForToolCall()
+	cResult := C.CString(result)
+	if cResult == nil {
+		return C.CString(`{"success":false,"error":"Failed to allocate C string"}`)
+	}
+	return cResult
+}
+
 //export quill_parse_only
 func quill_parse_only(source *C.char) *C.char {
 	goSource := C.GoString(source)
 	result := jsonapi.ParseOnly(goSource)
+	cResult := C.CString(result)
+	if cResult == nil {
+		return C.CString(`{"success":false,"error":"Failed to allocate C string"}`)
+	}
+	return cResult
+}
+
+//export quill_handle_tool_call_response
+func quill_handle_tool_call_response(interpID C.int, responseJSON *C.char) *C.char {
+	mu.Lock()
+	interp, exists := interpreters[int(interpID)]
+	mu.Unlock()
+
+	if !exists {
+		return C.CString(`{"success":false,"error":"Invalid interpreter ID"}`)
+	}
+
+	// Parse the JSON response to extract the actual result
+	goResponseJSON := C.GoString(responseJSON)
+
+	// For now, we'll pass the JSON string directly to the interpreter
+	// In a more sophisticated implementation, you might want to parse this JSON
+	// and extract the actual value based on type
+	result := interp.HandleToolCallResponse(goResponseJSON)
 	cResult := C.CString(result)
 	if cResult == nil {
 		return C.CString(`{"success":false,"error":"Failed to allocate C string"}`)
